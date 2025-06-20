@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: chug_pg
+    environment:
+      POSTGRES_USER: chugger
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: chugdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  adminer:
+    image: adminer
+    container_name: chug_adminer
+    restart: always
+    ports:
+      - 8080:8080
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.10
+    container_name: chug_clickhouse
+    ports:
+      - "8123:8123"   # HTTP
+      - "9000:9000"   # Native TCP
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - ch_data:/var/lib/clickhouse
+
+  tabix:
+    image: spoonest/clickhouse-tabix-web-client
+    container_name: chug_tabix
+    ports:
+      - "8124:80"
+    depends_on:
+      - clickhouse
+
+volumes:
+  pg_data:
+  ch_data:
