@@ -17,7 +17,7 @@ type TableData struct {
 	Rows    [][]any
 }
 
-func ExtractTableData(ctx context.Context, conn *pgx.Conn, table string) (*TableData, error) {
+func ExtractTableData(ctx context.Context, conn *pgx.Conn, table string, limit *int) (*TableData, error) {
 
 	//Get column information
 	colQuery := `
@@ -44,10 +44,19 @@ func ExtractTableData(ctx context.Context, conn *pgx.Conn, table string) (*Table
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating columns: %w", err)
+	} //Get table data
+	var dataQuery string
+	var dataRows pgx.Rows
+
+	// Use parameterized query for LIMIT to avoid SQL injection
+	if limit != nil && *limit > 0 {
+		dataQuery = "SELECT * FROM " + pgx.Identifier{table}.Sanitize() + " LIMIT $1"
+		dataRows, err = conn.Query(ctx, dataQuery, *limit)
+	} else {
+		dataQuery = "SELECT * FROM " + pgx.Identifier{table}.Sanitize()
+		dataRows, err = conn.Query(ctx, dataQuery)
 	}
-	//Get table data
-	dataQuery := "SELECT * FROM " + pgx.Identifier{table}.Sanitize()
-	dataRows, err := conn.Query(ctx, dataQuery)
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to query table data: %w", err)
 	}

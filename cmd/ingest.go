@@ -2,11 +2,12 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/pixperk/chug/internal/db"
 	"github.com/pixperk/chug/internal/etl"
+	"github.com/pixperk/chug/internal/logx"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 )
 
 var (
@@ -19,32 +20,43 @@ var (
 
 var ingestCmd = &cobra.Command{
 	Use:   "ingest",
-	Short: "Ingest data from PostgreSQL to ClickHouse",
-	Run: func(cmd *cobra.Command, args []string) {
+	Short: "Ingest data from PostgreSQL to ClickHouse", Run: func(cmd *cobra.Command, args []string) {
 
 		ctx := context.Background()
-		fmt.Println("🚰 Starting ingestion...")
+		logx.Logger.Info("🚰 Starting ingestion...")
 
 		//Connect to PostgreSQL
 		conn, err := db.ConnectPostgres(ingestPgURL)
 		if err != nil {
-			fmt.Printf("❌ Failed to connect to PostgreSQL: %v\n", err)
+			logx.Logger.Error("❌ Failed to connect to PostgreSQL",
+				zap.Error(err),
+			)
+
 			return
 		}
 
 		defer conn.Close(ctx)
 
 		//Extract
-		td, err := etl.ExtractTableData(ctx, conn, ingestTable)
+		td, err := etl.ExtractTableData(ctx, conn, ingestTable, &ingestLimit)
 		if err != nil {
-			fmt.Printf("❌ Failed to extract data from PostgreSQL: %v\n", err)
+			logx.Logger.Error("❌ Failed to extract data from PostgreSQL",
+
+				zap.Error(err),
+			)
 			return
 		}
+		logx.Logger.Info("📦 Extracted table",
+			zap.String("table", ingestTable),
+			zap.Int("rows", len(td.Rows)),
+			zap.Int("columns", len(td.Columns)),
+		)
 
 		//Transform
 		ddl, err := etl.BuildDDLQuery(ingestTable, td.Columns)
 		if err != nil {
-			fmt.Printf("❌ Failed to build DDL query: %v\n", err)
+			logx.Logger.Error("❌ Failed to build DDL query",
+				zap.Error(err))
 			return
 		}
 
@@ -52,19 +64,25 @@ var ingestCmd = &cobra.Command{
 		//Connect to ClickHouse
 		chConn, err := db.ConnectClickHouse(ingestChURL)
 		if err != nil {
-			fmt.Printf("❌ Failed to connect to ClickHouse: %v\n", err)
+			logx.Logger.Error("❌ Failed to connect to ClickHouse",
+				zap.Error(err),
+			)
 			return
 		}
 		defer chConn.Close()
 		//Create table
 		if err := etl.CreateTable(ingestChURL, ddl); err != nil {
-			fmt.Printf("❌ Failed to create table in ClickHouse: %v\n", err)
+			logx.Logger.Error("❌ Failed to create table in ClickHouse",
+				zap.Error(err),
+			)
 			return
 		}
 
 		//Insert rows
 		if err := etl.InsertRows(ingestChURL, ingestTable, etl.GetColumnNames(td.Columns), td.Rows, ingestBatch); err != nil {
-			fmt.Printf("❌ Failed to insert rows into ClickHouse: %v\n", err)
+			logx.Logger.Error("❌ Failed to insert rows into ClickHouse",
+				zap.Error(err),
+			)
 			return
 		}
 

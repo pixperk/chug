@@ -1,10 +1,11 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 
+	"github.com/pixperk/chug/internal/logx"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 )
 
 var rootCmd = &cobra.Command{
@@ -17,7 +18,10 @@ Just point, chug, and ask.`,
 
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Println("Error:", err)
+		logx.Logger.Error("❌ Command execution failed",
+			zap.Error(err),
+		)
+
 		os.Exit(1)
 	}
 }

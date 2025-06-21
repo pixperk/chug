@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/pixperk/chug/internal/db"
+	"github.com/pixperk/chug/internal/logx"
+	"go.uber.org/zap"
 )
 
 func CreateTable(chURL, ddl string) error {
@@ -21,7 +23,7 @@ func CreateTable(chURL, ddl string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create table: %w", err)
 	}
-	fmt.Println("Table created successfully")
+	logx.Logger.Info("Table created successfully")
 	return nil
 }
 
@@ -67,7 +69,11 @@ func InsertRows(chURL, table string, columns []string, rows [][]any, batchSize i
 		if err != nil {
 			return fmt.Errorf("failed to insert rows into %s: %w", table, err)
 		}
-		fmt.Printf("Inserted %d rows into %s\n", len(batch), table)
+		logx.Logger.Info("Inserted rows",
+			zap.Int("row_count", len(batch)),
+			zap.String("table", table),
+		)
+
 	}
 	return nil
 }
