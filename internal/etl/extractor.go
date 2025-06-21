@@ -71,3 +71,11 @@ func ExtractTableData(ctx context.Context, conn *pgx.Conn, table string) (*Table
 	}, nil
 
 }
+
+func GetColumnNames(cols []Column) []string {
+	names := make([]string, len(cols))
+	for i, col := range cols {
+		names[i] = col.Name
+	}
+	return names
+}
