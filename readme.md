@@ -1,4 +1,4 @@
-# 🚀 CHUG: Blazing-Fast ETL Pipeline for PostgreSQL to ClickHouse
+#  CHUG: Blazing-Fast ETL Pipeline for PostgreSQL to ClickHouse
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/pixperk/chug)](https://goreportcard.com/report/github.com/pixperk/chug)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/pixperk/chug)](https://github.com/pixperk/chug)
