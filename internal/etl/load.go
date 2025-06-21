@@ -3,6 +3,7 @@ package etl
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/pixperk/chug/internal/db"
 	"github.com/pixperk/chug/internal/logx"
@@ -65,13 +66,25 @@ func InsertRows(chURL, table string, columns []string, rows [][]any, batchSize i
 		query := insertPrefix + buildValuesPlaceholders(len(batch), len(columns))
 		args := flatten(batch)
 
-		_, err = conn.ExecContext(ctx, query, args...)
+		err := Retry(ctx, RetryConfig{
+			MaxAttempts: 4,
+			BaseDelay:   250 * time.Millisecond,
+			MaxDelay:    2 * time.Second,
+			Jitter:      true,
+		}, func() error {
+			_, err := conn.ExecContext(ctx, query, args...)
+			return err
+		})
+
 		if err != nil {
 			return fmt.Errorf("failed to insert rows into %s: %w", table, err)
 		}
-		logx.Logger.Info("Inserted rows",
-			zap.Int("row_count", len(batch)),
+
+		logx.Logger.Info("Inserted rows into ClickHouse",
+			zap.Int("row_count", end-i),
 			zap.String("table", table),
+			zap.Int("batch_size", batchSize),
+			zap.Int("total_rows", len(rows)),
 		)
 
 	}
