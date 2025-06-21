@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/pixperk/chug/internal/db"
@@ -17,17 +18,21 @@ var connectCmd = &cobra.Command{
 	Short: "Test Postgres and ClickHouse connections",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("Testing Postgres connection...")
-		if err := db.TestPostgres(pgURL); err != nil {
+		conn, err := db.ConnectPostgres(pgURL)
+		if err != nil {
 			fmt.Println("❌ Postgres connection failed:", err)
-		} else {
-			fmt.Println("✅ Postgres connected")
+			return
 		}
+		defer conn.Close(context.Background())
+		fmt.Println("✅ Postgres connected")
 		fmt.Println("Testing ClickHouse connection...")
-		if err := db.TestClickHouse(chURL); err != nil {
+		chConn, err := db.ConnectClickHouse(chURL)
+		if err != nil {
 			fmt.Println("❌ ClickHouse connection failed:", err)
-		} else {
-			fmt.Println("✅ ClickHouse connected")
+			return
 		}
+		defer chConn.Close()
+		fmt.Println("✅ ClickHouse connected")
 	},
 }
 

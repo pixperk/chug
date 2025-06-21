@@ -1,14 +1,15 @@
 package db
 
 import (
-	"context"
+	"database/sql"
 	"net/url"
 	"strings"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 )
 
-func TestClickHouse(chURL string) error {
+func ConnectClickHouse(chURL string) (*sql.DB, error) {
+
 	var addr string
 	var username, password, database string
 
@@ -16,7 +17,7 @@ func TestClickHouse(chURL string) error {
 	if strings.HasPrefix(chURL, "http://") || strings.HasPrefix(chURL, "tcp://") {
 		u, err := url.Parse(chURL)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		addr = u.Host
 		if u.User != nil {
@@ -30,7 +31,7 @@ func TestClickHouse(chURL string) error {
 		addr = chURL
 	}
 
-	conn := clickhouse.OpenDB(&clickhouse.Options{
+	return clickhouse.OpenDB(&clickhouse.Options{
 		Addr: []string{addr},
 		Auth: clickhouse.Auth{
 			Database: ifEmpty(database, "default"),
@@ -40,9 +41,8 @@ func TestClickHouse(chURL string) error {
 		Settings: clickhouse.Settings{
 			"send_logs_level": "trace", // for debug visibility
 		},
-	})
+	}), nil
 
-	return conn.PingContext(context.Background())
 }
 
 func ifEmpty(s, def string) string {
