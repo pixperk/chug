@@ -188,7 +188,7 @@ func init() {
 	ingestCmd.Flags().IntVar(&ingestBatch, "batch-size", 500, "Rows per ClickHouse insert")
 	// Polling flags
 	ingestCmd.Flags().BoolVar(&ingestPoll, "poll", false, "Continue polling for changes after initial ingest")
-	ingestCmd.Flags().StringVar(&ingestPollDelta, "poll-delta", "updated_at", "Column name to track changes (usually a timestamp)")
-	ingestCmd.Flags().IntVar(&ingestPollInt, "poll-interval", 30, "Polling interval in seconds")
+	ingestCmd.Flags().StringVar(&ingestPollDelta, "poll-delta", "", "Column name to track changes (usually a timestamp)")
+	ingestCmd.Flags().IntVar(&ingestPollInt, "poll-interval", 0, "Polling interval in seconds")
 	rootCmd.AddCommand(ingestCmd)
 }
