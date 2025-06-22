@@ -12,7 +12,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func ExportTableToCSV(table, chUrl, outPath string) error {
+func ExportTableToCSV(chUrl, table, outPath string) error {
 	conn, err := db.ConnectClickHouse(chUrl)
 	if err != nil {
 		return fmt.Errorf("❌ ClickHouse connection failed: %w", err)
