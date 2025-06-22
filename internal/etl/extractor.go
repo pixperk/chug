@@ -17,9 +17,7 @@ type TableData struct {
 	Rows    [][]any
 }
 
-func ExtractTableData(ctx context.Context, conn *pgx.Conn, table string, limit *int) (*TableData, error) {
-
-	//Get column information
+func getColumns(ctx context.Context, conn *pgx.Conn, table string) ([]Column, error) {
 	colQuery := `
 		SELECT column_name, data_type
 		FROM information_schema.columns
@@ -31,7 +29,6 @@ func ExtractTableData(ctx context.Context, conn *pgx.Conn, table string, limit *
 	if err != nil {
 		return nil, fmt.Errorf("failed to query columns: %w", err)
 	}
-
 	defer rows.Close()
 
 	var cols []Column
@@ -44,41 +41,92 @@ func ExtractTableData(ctx context.Context, conn *pgx.Conn, table string, limit *
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating columns: %w", err)
-	} //Get table data
-	var dataQuery string
-	var dataRows pgx.Rows
+	}
+	return cols, nil
+}
 
-	// Use parameterized query for LIMIT to avoid SQL injection
-	if limit != nil && *limit > 0 {
-		dataQuery = "SELECT * FROM " + pgx.Identifier{table}.Sanitize() + " LIMIT $1"
-		dataRows, err = conn.Query(ctx, dataQuery, *limit)
-	} else {
-		dataQuery = "SELECT * FROM " + pgx.Identifier{table}.Sanitize()
-		dataRows, err = conn.Query(ctx, dataQuery)
+func ExtractTableData(ctx context.Context, conn *pgx.Conn, table string, limit *int) (*TableData, error) {
+	cols, err := getColumns(ctx, conn, table)
+	if err != nil {
+		return nil, err
 	}
 
+	var query string
+	var rows pgx.Rows
+
+	if limit != nil && *limit > 0 {
+		query = "SELECT * FROM " + pgx.Identifier{table}.Sanitize() + " LIMIT $1"
+		rows, err = conn.Query(ctx, query, *limit)
+	} else {
+		query = "SELECT * FROM " + pgx.Identifier{table}.Sanitize()
+		rows, err = conn.Query(ctx, query)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to query table data: %w", err)
 	}
-	defer dataRows.Close()
+	defer rows.Close()
 
 	var result [][]any
-	for dataRows.Next() {
-		values, err := dataRows.Values()
+	for rows.Next() {
+		values, err := rows.Values()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get row values: %w", err)
 		}
 		result = append(result, values)
 	}
-	if err := dataRows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating table data: %w", err)
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating rows: %w", err)
 	}
 
 	return &TableData{
 		Columns: cols,
 		Rows:    result,
 	}, nil
+}
 
+// polling use case
+func ExtractTableDataSince(ctx context.Context, conn *pgx.Conn, table, deltaCol, lastSeen string, limit *int) (*TableData, error) {
+	cols, err := getColumns(ctx, conn, table)
+	if err != nil {
+		return nil, err
+	}
+
+	query := fmt.Sprintf(
+		"SELECT * FROM %s WHERE %s > $1 ORDER BY %s ASC",
+		pgx.Identifier{table}.Sanitize(),
+		deltaCol,
+		deltaCol,
+	)
+
+	var rows pgx.Rows
+	if limit != nil && *limit > 0 {
+		query += " LIMIT $2"
+		rows, err = conn.Query(ctx, query, lastSeen, *limit)
+	} else {
+		rows, err = conn.Query(ctx, query, lastSeen)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to query delta rows: %w", err)
+	}
+	defer rows.Close()
+
+	var result [][]any
+	for rows.Next() {
+		values, err := rows.Values()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get delta row values: %w", err)
+		}
+		result = append(result, values)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating delta rows: %w", err)
+	}
+
+	return &TableData{
+		Columns: cols,
+		Rows:    result,
+	}, nil
 }
 
 func GetColumnNames(cols []Column) []string {
