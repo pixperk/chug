@@ -26,6 +26,7 @@ go.work.sum
 
 # env file
 *.env
+.chug.yaml
 
 # Editor/IDE
 # .idea/
