@@ -8,11 +8,18 @@ import (
 )
 
 type Config struct {
-	PostgresURL   string `yaml:"pg_url"`
-	ClickHouseURL string `yaml:"ch_url"`
-	Table         string `yaml:"table"`
-	Limit         int    `yaml:"limit"`
-	BatchSize     int    `yaml:"batch_size"`
+	PostgresURL   string        `yaml:"pg_url"`
+	ClickHouseURL string        `yaml:"ch_url"`
+	Table         string        `yaml:"table"`
+	Limit         int           `yaml:"limit"`
+	BatchSize     int           `yaml:"batch_size"`
+	Polling       PollingConfig `yaml:"polling"`
+}
+
+type PollingConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	DeltaCol string `yaml:"delta_column"`
+	Interval int    `yaml:"interval_seconds"`
 }
 
 func Load(path string) (*Config, error) {

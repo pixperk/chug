@@ -22,6 +22,7 @@ var pgToCHType = map[string]string{
 	"json":                        "String", // or JSON object if ClickHouse supports it in future
 	"jsonb":                       "String",
 	"uuid":                        "UUID",
+	"bytea":                       "UUID", // pgx v5 uses bytea for uuid
 	"inet":                        "String",
 	"USER-DEFINED":                "String", // fallback
 }

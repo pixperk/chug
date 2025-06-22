@@ -72,6 +72,22 @@ func ExtractTableData(ctx context.Context, conn *pgx.Conn, table string, limit *
 		if err != nil {
 			return nil, fmt.Errorf("failed to get row values: %w", err)
 		}
+		for i, val := range values {
+			var uuidBytes []byte
+			switch v := val.(type) {
+			case [16]byte:
+				uuidBytes = v[:]
+			case []byte:
+				uuidBytes = v
+			}
+
+			if uuidBytes != nil && (cols[i].Type == "uuid" || cols[i].Type == "bytea") {
+				if len(uuidBytes) == 16 {
+					// Format byte slice as UUID string
+					values[i] = fmt.Sprintf("%x-%x-%x-%x-%x", uuidBytes[0:4], uuidBytes[4:6], uuidBytes[6:8], uuidBytes[8:10], uuidBytes[10:16])
+				}
+			}
+		}
 		result = append(result, values)
 	}
 
@@ -116,6 +132,22 @@ func ExtractTableDataSince(ctx context.Context, conn *pgx.Conn, table, deltaCol,
 		values, err := rows.Values()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get delta row values: %w", err)
+		}
+		for i, val := range values {
+			var uuidBytes []byte
+			switch v := val.(type) {
+			case [16]byte:
+				uuidBytes = v[:]
+			case []byte:
+				uuidBytes = v
+			}
+
+			if uuidBytes != nil && (cols[i].Type == "uuid" || cols[i].Type == "bytea") {
+				if len(uuidBytes) == 16 {
+					// Format byte slice as UUID string
+					values[i] = fmt.Sprintf("%x-%x-%x-%x-%x", uuidBytes[0:4], uuidBytes[4:6], uuidBytes[6:8], uuidBytes[8:10], uuidBytes[10:16])
+				}
+			}
 		}
 		result = append(result, values)
 	}

@@ -9,8 +9,7 @@ import (
 
 var sampleConfigCmd = &cobra.Command{
 	Use:   "sample-config",
-	Short: "Generate a sample config file (.chug.yaml)",
-	Run: func(cmd *cobra.Command, args []string) {
+	Short: "Generate a sample config file (.chug.yaml)", Run: func(cmd *cobra.Command, args []string) {
 		const sample = `# chug.yaml - Sample Configuration
 
 # PostgreSQL connection URL
@@ -27,6 +26,15 @@ limit: 1000
 
 # Batch size per insert
 batch_size: 200
+
+# Polling configuration
+polling:
+  # Enable polling for changes after initial ingest
+  enabled: false
+  # Column name to track changes (usually a timestamp)
+  delta_column: "updated_at"
+  # Polling interval in seconds
+  interval_seconds: 30
 `
 		err := os.WriteFile(".chug.yaml", []byte(sample), 0644)
 		if err != nil {
