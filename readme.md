@@ -6,36 +6,7 @@
 
 Chug is a high-performance ETL (Extract, Transform, Load) tool designed to stream data from PostgreSQL databases to ClickHouse for analytics at ludicrous speed.
 
-```
-┌────────────────────────┐                              ┌────────────────────────┐
-│                        │                              │                        │
-│      PostgreSQL        │                              │      ClickHouse        │
-│                        │                              │                        │
-│    ┌──────────────┐    │                              │    ┌──────────────┐    │
-│    │              │    │                              │    │              │    │
-│    │    Tables    │    │                              │    │    Tables    │    │
-│    │              │    │                              │    │              │    │
-│    └──────────────┘    │                              │    └──────────────┘    │
-│           │            │                              │           ▲            │
-└───────────┼────────────┘                              └───────────┼────────────┘
-            │                                                       │
-            │                                                       │
-            │                ┌────────────────────┐                 │
-            │                │                    │                 │
-            └───────────────▶│       CHUG        │─────────────────┘
-                             │                    │
-                             │  ┌─────┐ ┌──────┐  │
-                             │  │  E  │ │  T   │  │
-                             │  └──┬──┘ └──┬───┘  │
-                             │     │      │       │
-                             │     └──────┘       │
-                             │         │          │
-                             │      ┌──┴───┐      │
-                             │      │  L   │      │
-                             │      └──────┘      │
-                             │                    │
-                             └────────────────────┘
-```
+![Chug Architecture](assets/chug_arch.png)
 
 ## 🌟 Features
 
@@ -48,6 +19,10 @@ Chug is a high-performance ETL (Extract, Transform, Load) tool designed to strea
 - **Resource Efficient**: Streaming data extraction and loading minimizes memory usage
 - **SQL Compatibility**: Support for both PostgreSQL and ClickHouse SQL dialects
 - **Containerized**: Ready-to-use Docker Compose setup for local development and testing
+- **YAML Configuration**: Support for structured YAML configuration for more complex setups
+- **CDC Polling**: Light-weight Change Data Capture for incremental data ingestion through polling
+- **UUID Support**: Enhanced handling of UUID data types for seamless migration
+- **CSV Export**: Ability to export data from ClickHouse tables to CSV files
 
 ## 🛠️ Installation
 
@@ -126,15 +101,51 @@ Transfer data from PostgreSQL to ClickHouse:
               --ch-url <clickhouse-connection-string> \
               --table <table-name> \
               [--limit <max-rows>] \
-              [--batch-size <rows-per-batch>]
+              [--batch-size <rows-per-batch>] \
+              [--config <path-to-config-file>] \
+              [--poll] \
+              [--poll-delta <delta-column>] \
+              [--poll-interval <seconds>]
 ```
 
 Options:
-- `--pg-url`: PostgreSQL connection string (required)
-- `--ch-url`: ClickHouse connection string (required)
-- `--table`: Name of the table to transfer (required)
+- `--pg-url`: PostgreSQL connection string (required if not in config)
+- `--ch-url`: ClickHouse connection string (required if not in config)
+- `--table`: Name of the table to transfer (required if not in config)
 - `--limit`: Maximum number of rows to extract (default: 1000)
 - `--batch-size`: Number of rows per INSERT batch (default: 500)
+- `--config`: Path to YAML configuration file (default: .chug.yaml)
+- `--poll`: Enable continuous polling for changes after initial ingest
+- `--poll-delta`: Column name to track changes, usually a timestamp or incrementing ID (default: updated_at)
+- `--poll-interval`: Polling interval in seconds (default: 30)
+
+### `sample-config`
+
+Generate a sample YAML configuration file:
+
+```bash
+./chug sample-config
+```
+
+This will create a `.chug.yaml` file in the current directory with default settings.
+
+### `export`
+
+Export data from ClickHouse to CSV:
+
+```bash
+./chug export --ch-url <clickhouse-connection-string> \
+             --table <table-name> \
+             --format csv \
+             --out <output-directory>
+```
+
+Options:
+- `--ch-url`: ClickHouse connection string (required if not in config)
+- `--table`: Name of the table to export (required if not in config)
+- `--format`: Export format (currently only csv is supported)
+- `--out`: Output directory for exported files (default: current directory)
+- `--config`: Path to YAML configuration file (default: .chug.yaml)
 
 ## 🔒 Security Features
 
@@ -167,24 +178,34 @@ Chug follows a clean, modular architecture:
 ### Components
 
 - **cmd**: Command-line interface definitions using Cobra
+  - **connect.go**: Connection testing functionality
+  - **ingest.go**: Data ingestion commands
+  - **poll.go**: Polling functionality for CDC
+  - **sample_config.go**: Configuration sample generator
+  - **root.go**: Root command and global flags
 - **internal/db**: Database connection utilities
+  - **clickhouse.go**: ClickHouse connection handling
+  - **postgres.go**: PostgreSQL connection handling
 - **internal/etl**: Core ETL functionality
-  - Extraction logic
-  - Schema mapping
-  - Data loading
-  - Helper utilities
+  - **extractor.go**: Data extraction from PostgreSQL
+  - **transform.go**: Schema and data transformation
+  - **load.go**: Data loading into ClickHouse
+  - **pgToCh.go**: PostgreSQL to ClickHouse type mapping
+  - **retry.go**: Retry mechanisms for resilient operations
+- **internal/config**: Configuration handling
+  - **config.go**: YAML configuration loading and parsing
+- **internal/poller**: Change data capture functionality
+  - **poller.go**: Implementation of delta-based polling
 - **internal/logx**: Structured logging with Zap
 
 ## 📅 Roadmap
 
 The following features are planned for future releases:
 
-- **YAML Configuration**: Replace CLI flags with structured YAML configuration for more complex setups
-- **Export Capabilities**: Support for exporting data to CSV and Parquet formats
-- **CDC Polling**: Light-weight Change Data Capture for incremental data ingestion
+- **Parquet Export**: Support for exporting data to Parquet format
 - **Prometheus Metrics**: Performance monitoring and alerting integration
-- **Schema Evolution**: Automatic handling of schema changes
-- **Parallel Extraction**: Multi-threaded data extraction for improved performance
+- **Conflict Resolution**: Strategies for handling conflicting updates during synchronization
+- **Data Validation**: Options for validating data integrity during and after transfer
 
 ## 🔄 Development Workflow
 
@@ -254,6 +275,81 @@ docker run -d --name chug-etl \
   --table "customers" \
   --batch-size 1000
 ```
+
+### Using YAML Configuration
+
+For more complex setups, use a YAML configuration file:
+
+1. Generate a sample configuration:
+   ```bash
+   ./chug sample-config
+   ```
+
+2. Edit the generated `.chug.yaml` file:
+   ```yaml
+   # PostgreSQL connection URL
+   pg_url: "postgres://analytics_user:pass@pg-server:5432/analytics"
+   
+   # ClickHouse HTTP interface URL
+   ch_url: "clickhouse-server:9000"
+   
+   # Table to ingest from Postgres
+   table: "user_events"
+   
+   # Max rows to fetch
+   limit: 10000
+   
+   # Batch size per insert
+   batch_size: 2000
+   
+   # Polling configuration
+   polling:
+     # Enable polling for changes after initial ingest
+     enabled: true
+     # Column name to track changes (usually a timestamp)
+     delta_column: "updated_at"
+     # Polling interval in seconds
+     interval_seconds: 60
+   ```
+
+3. Run Chug with the configuration file:
+   ```bash
+   ./chug ingest --config .chug.yaml
+   ```
+
+### Continuous Data Synchronization with Polling
+
+To keep your ClickHouse tables in sync with PostgreSQL:
+
+```bash
+# Use polling to continuously monitor for changes
+./chug ingest --pg-url "postgres://app:password@postgres.example.com/app_db" \
+             --ch-url "clickhouse.example.com:9000" \
+             --table "transactions" \
+             --poll \
+             --poll-delta "modified_timestamp" \
+             --poll-interval 300
+```
+
+This will:
+1. Perform an initial full table import
+2. Monitor the `modified_timestamp` column for new or updated records
+3. Check for changes every 5 minutes (300 seconds)
+4. Automatically import only the changed records
+
+### Exporting Data to CSV
+
+To export data from ClickHouse to a CSV file:
+
+```bash
+# Export a table to CSV
+./chug export --ch-url "clickhouse.example.com:9000" \
+             --table "user_analytics" \
+             --format csv \
+             --out "/path/to/exports"
+```
+
+This will create a file named `user_analytics.csv` in the specified output directory containing all data from the table.
 
 ---
 
