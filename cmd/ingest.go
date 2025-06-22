@@ -93,7 +93,7 @@ var ingestCmd = &cobra.Command{
 		)
 
 		//Transform
-		ddl, err := etl.BuildDDLQuery(ingestTable, td.Columns)
+		ddl, err := etl.BuildDDLQuery(cfg.Table, td.Columns)
 		if err != nil {
 			logx.Logger.Error("❌ Failed to build DDL query",
 				zap.Error(err))

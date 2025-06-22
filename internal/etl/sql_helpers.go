@@ -5,12 +5,12 @@ import (
 	"strings"
 )
 
-// QuoteIdentifier properly quotes an identifier (table or column name) to prevent SQL injection
+// QuoteIdentifier properly quotes an identifier (table or column name) for ClickHouse
 func QuoteIdentifier(identifier string) string {
-	// Remove any existing backticks and replace with double backticks (escaping)
-	escaped := strings.ReplaceAll(identifier, "`", "``")
-	// Wrap the identifier in backticks
-	return "`" + escaped + "`"
+	// Escape internal double quotes by doubling them
+	escaped := strings.ReplaceAll(identifier, `"`, `""`)
+	// Wrap in double quotes (ANSI-style quoting)
+	return `"` + escaped + `"`
 }
 
 // IsValidIdentifier checks if the identifier contains only valid characters
