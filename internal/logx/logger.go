@@ -12,4 +12,7 @@ func InitLogger() {
 	if err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}
+
+	// Initialize the styled logger
+	InitStyledLogger()
 }

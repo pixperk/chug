@@ -10,15 +10,24 @@ import (
 	"github.com/pixperk/chug/internal/etl"
 	"github.com/pixperk/chug/internal/logx"
 	"github.com/pixperk/chug/internal/poller"
+	"github.com/pixperk/chug/internal/ui"
 	"go.uber.org/zap"
 )
 
 func startPolling(ctx context.Context, cfg *config.Config, lastSeen string) error {
-	logx.Logger.Info("🔄 Starting change data polling",
-		zap.String("table", cfg.Table),
-		zap.String("delta_column", cfg.Polling.DeltaCol),
-		zap.Int("interval_seconds", cfg.Polling.Interval),
-	)
+	log := logx.StyledLog
+	log.Highlight("Starting change data polling")
+
+	startFrom := lastSeen
+	if startFrom == "" {
+		startFrom = "beginning"
+	}
+
+	ui.PrintBox("Polling Configuration",
+		"Table: "+cfg.Table+"\n"+
+			"Delta Column: "+cfg.Polling.DeltaCol+"\n"+
+			"Interval: "+fmt.Sprintf("%d seconds", cfg.Polling.Interval)+"\n"+
+			"Starting From: "+startFrom)
 
 	// Connect to PostgreSQL for polling
 	pgConn, err := db.ConnectPostgres(cfg.PostgresURL)
@@ -29,10 +38,14 @@ func startPolling(ctx context.Context, cfg *config.Config, lastSeen string) erro
 
 	// Define how to handle new data
 	processNewData := func(data *etl.TableData) error {
-		logx.Logger.Info("📥 Processing new data batch",
-			zap.Int("rows", len(data.Rows)),
-			zap.String("table", cfg.Table),
-		)
+		if len(data.Rows) > 0 {
+			log.Info(fmt.Sprintf("Processing new data batch: %d rows", len(data.Rows)),
+				zap.Int("rows", len(data.Rows)),
+				zap.String("table", cfg.Table),
+			)
+		} else {
+			log.Info("No new data found in this polling cycle")
+		}
 
 		// Insert the new rows
 		return etl.InsertRows(cfg.ClickHouseURL, cfg.Table, etl.GetColumnNames(data.Columns), data.Rows, cfg.BatchSize)
@@ -53,7 +66,10 @@ func startPolling(ctx context.Context, cfg *config.Config, lastSeen string) erro
 }
 
 func determineLastSeen(td *etl.TableData, deltaCol string) (string, error) {
+	log := logx.StyledLog
+
 	if len(td.Rows) == 0 {
+		log.Info("No initial rows to determine last seen value")
 		return "", nil
 	}
 
@@ -70,17 +86,24 @@ func determineLastSeen(td *etl.TableData, deltaCol string) (string, error) {
 	}
 
 	lastRow := td.Rows[len(td.Rows)-1]
+	var lastSeenValue string
 
 	switch v := lastRow[deltaColIndex].(type) {
 	case time.Time:
-		return v.Format(time.RFC3339Nano), nil
+		lastSeenValue = v.Format(time.RFC3339Nano)
 	case string:
-		return v, nil
+		lastSeenValue = v
 	case int, int64, int32, int16, int8:
-		return fmt.Sprintf("%d", v), nil
+		lastSeenValue = fmt.Sprintf("%d", v)
 	case float64, float32:
-		return fmt.Sprintf("%f", v), nil
+		lastSeenValue = fmt.Sprintf("%f", v)
 	default:
-		return fmt.Sprintf("%v", v), nil
+		lastSeenValue = fmt.Sprintf("%v", v)
 	}
+
+	log.Info("Determined last seen value for delta tracking",
+		zap.String("column", deltaCol),
+		zap.String("value", lastSeenValue))
+
+	return lastSeenValue, nil
 }

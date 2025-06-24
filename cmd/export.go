@@ -7,6 +7,7 @@ import (
 	"github.com/pixperk/chug/internal/config"
 	"github.com/pixperk/chug/internal/etl/export"
 	"github.com/pixperk/chug/internal/logx"
+	"github.com/pixperk/chug/internal/ui"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
@@ -21,13 +22,18 @@ var (
 
 var exportCmd = &cobra.Command{
 	Use:   "export",
-	Short: "Export data from ClickHouse to CSV", Run: func(cmd *cobra.Command, args []string) {
-		logx.Logger.Info("📤 Starting export...")
+	Short: "Export data from ClickHouse to CSV",
+	Run: func(cmd *cobra.Command, args []string) {
+		ui.PrintTitle("Exporting Data")
+		ui.PrintSubtitle("Converting ClickHouse table to external format")
+
+		log := logx.StyledLog
+		log.Info("Starting export process...")
 
 		// Load config if provided
 		cfg, err := config.Load(exportConfigPath)
 		if err != nil {
-			logx.Logger.Error("⚠️ Could not load config from file, falling back to flags", zap.Error(err))
+			log.Warn("Could not load config from file, falling back to flags", zap.Error(err))
 			cfg = &config.Config{
 				ClickHouseURL: exportChURL,
 				Table:         exportTable,
@@ -44,7 +50,7 @@ var exportCmd = &cobra.Command{
 
 		// Validate config
 		if cfg.ClickHouseURL == "" || cfg.Table == "" {
-			logx.Logger.Fatal("❌ Missing required config values. Provide them in YAML or as flags.",
+			log.Fatal("Missing required config values. Provide them in YAML or as flags.",
 				zap.String("ch_url", cfg.ClickHouseURL),
 				zap.String("table", cfg.Table),
 			)
@@ -52,12 +58,21 @@ var exportCmd = &cobra.Command{
 		}
 
 		if exportFormat != "csv" {
-			logx.Logger.Error("❌ Unsupported export format")
+			log.Error("Unsupported export format. Currently only CSV is supported.")
 			return
 		}
+
+		// Show export details
+		ui.PrintBox("Export Details", fmt.Sprintf(
+			"Table: %s\nFormat: %s\nOutput Directory: %s",
+			cfg.Table, exportFormat, exportOut,
+		))
+
 		outPath := filepath.Join(exportOut, fmt.Sprintf("%s.%s", cfg.Table, exportFormat))
+
+		log.Info("Starting data extraction...")
 		if err := export.ExportTableToCSV(cfg.ClickHouseURL, cfg.Table, outPath); err != nil {
-			logx.Logger.Error("❌ Export failed",
+			log.Error("Export failed",
 				zap.String("table", cfg.Table),
 				zap.String("format", exportFormat),
 				zap.String("output", outPath),
@@ -65,11 +80,12 @@ var exportCmd = &cobra.Command{
 			)
 			return
 		}
-		logx.Logger.Info("✅ Export completed successfully",
-			zap.String("table", cfg.Table),
-			zap.String("format", exportFormat),
-			zap.String("output", outPath),
-		)
+
+		log.Success("Export completed successfully")
+		ui.PrintBox("Export Result", fmt.Sprintf(
+			"Table: %s\nFormat: %s\nOutput File: %s",
+			cfg.Table, exportFormat, outPath,
+		))
 	},
 }
 
