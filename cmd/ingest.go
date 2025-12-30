@@ -59,22 +59,21 @@ var ingestCmd = &cobra.Command{
 			return
 		}
 
-		// Extract data from PostgreSQL
-		log.Info("Extracting data from PostgreSQL...")
-		td, err := etl.ExtractTableData(ctx, conn, cfg.Table, &cfg.Limit)
+		// Extract data from PostgreSQL (streaming)
+		log.Info("Extracting data from PostgreSQL (streaming)...")
+		stream, err := etl.ExtractTableDataStreaming(ctx, conn, cfg.Table, &cfg.Limit)
 		if err != nil {
-			log.Error("Failed to extract data from PostgreSQL", zap.Error(err))
+			log.Error("Failed to start extraction from PostgreSQL", zap.Error(err))
 			return
 		}
 
-		log.Success("Extracted table data",
+		log.Success("Started streaming extraction",
 			zap.String("table", cfg.Table),
-			zap.Int("rows", len(td.Rows)),
-			zap.Int("columns", len(td.Columns)))
+			zap.Int("columns", len(stream.Columns)))
 
 		// Build DDL query for ClickHouse
 		log.Info("Building ClickHouse table schema...")
-		ddl, err := etl.BuildDDLQuery(cfg.Table, td.Columns)
+		ddl, err := etl.BuildDDLQuery(cfg.Table, stream.Columns)
 		if err != nil {
 			log.Error("Failed to build DDL query", zap.Error(err))
 			return
@@ -87,30 +86,57 @@ var ingestCmd = &cobra.Command{
 			return
 		}
 
-		// Insert rows into ClickHouse
-		log.Info("Inserting data into ClickHouse...")
-		if err := etl.InsertRows(cfg.ClickHouseURL, cfg.Table, etl.GetColumnNames(td.Columns), td.Rows, cfg.BatchSize); err != nil {
+		// Insert rows into ClickHouse (streaming)
+		log.Info("Inserting data into ClickHouse (streaming)...")
+
+		var lastRow []any
+		var lastSeenValue string
+		rowChan := make(chan []any, 100)
+
+		go func() {
+			for row := range stream.RowChan {
+				lastRow = row
+				rowChan <- row
+			}
+			close(rowChan)
+		}()
+
+		if err := etl.InsertRowsStreaming(ctx, cfg.ClickHouseURL, cfg.Table, etl.GetColumnNames(stream.Columns), rowChan, cfg.BatchSize); err != nil {
 			log.Error("Failed to insert rows into ClickHouse", zap.Error(err))
 			return
 		}
 
+		select {
+		case err := <-stream.ErrChan:
+			if err != nil {
+				log.Error("Extraction error", zap.Error(err))
+				return
+			}
+		default:
+		}
+
 		log.Success("Initial ingest completed successfully",
-			zap.String("table", cfg.Table),
-			zap.Int("rows", len(td.Rows)))
+			zap.String("table", cfg.Table))
 
 		// Start polling if enabled
 		if cfg.Polling.Enabled {
 			ui.PrintSubtitle("Starting Change Data Polling")
 
-			// Determine the last seen value for delta tracking
-			lastSeen, err := determineLastSeen(td, cfg.Polling.DeltaCol)
-			if err != nil {
-				log.Error("Failed to determine last seen value", zap.Error(err))
-				return
+			if lastRow != nil {
+				deltaColIndex := -1
+				for i, col := range stream.Columns {
+					if col.Name == cfg.Polling.DeltaCol {
+						deltaColIndex = i
+						break
+					}
+				}
+
+				if deltaColIndex != -1 {
+					lastSeenValue = fmt.Sprintf("%v", lastRow[deltaColIndex])
+				}
 			}
 
-			// Start polling process
-			if err := startPolling(ctx, cfg, lastSeen); err != nil {
+			if err := startPolling(ctx, cfg, lastSeenValue); err != nil {
 				log.Error("Polling stopped with error", zap.Error(err))
 			}
 		}

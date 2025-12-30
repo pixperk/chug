@@ -169,3 +169,159 @@ func GetColumnNames(cols []Column) []string {
 	}
 	return names
 }
+
+type StreamResult struct {
+	Columns []Column
+	RowChan <-chan []any
+	ErrChan <-chan error
+}
+
+func ExtractTableDataStreaming(ctx context.Context, conn *pgxpool.Pool, table string, limit *int) (*StreamResult, error) {
+	cols, err := getColumns(ctx, conn, table)
+	if err != nil {
+		return nil, err
+	}
+
+	rowChan := make(chan []any, 100)
+	errChan := make(chan error, 1)
+
+	go func() {
+		defer close(rowChan)
+		defer close(errChan)
+
+		var query string
+		var rows pgx.Rows
+		var err error
+
+		if limit != nil && *limit > 0 {
+			query = "SELECT * FROM " + pgx.Identifier{table}.Sanitize() + " LIMIT $1"
+			rows, err = conn.Query(ctx, query, *limit)
+		} else {
+			query = "SELECT * FROM " + pgx.Identifier{table}.Sanitize()
+			rows, err = conn.Query(ctx, query)
+		}
+		if err != nil {
+			errChan <- fmt.Errorf("failed to query table data: %w", err)
+			return
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			values, err := rows.Values()
+			if err != nil {
+				errChan <- fmt.Errorf("failed to get row values: %w", err)
+				return
+			}
+
+			for i, val := range values {
+				var uuidBytes []byte
+				switch v := val.(type) {
+				case [16]byte:
+					uuidBytes = v[:]
+				case []byte:
+					uuidBytes = v
+				}
+
+				if uuidBytes != nil && (cols[i].Type == "uuid" || cols[i].Type == "bytea") {
+					if len(uuidBytes) == 16 {
+						values[i] = fmt.Sprintf("%x-%x-%x-%x-%x", uuidBytes[0:4], uuidBytes[4:6], uuidBytes[6:8], uuidBytes[8:10], uuidBytes[10:16])
+					}
+				}
+			}
+
+			select {
+			case rowChan <- values:
+			case <-ctx.Done():
+				errChan <- ctx.Err()
+				return
+			}
+		}
+
+		if err := rows.Err(); err != nil {
+			errChan <- fmt.Errorf("error iterating rows: %w", err)
+		}
+	}()
+
+	return &StreamResult{
+		Columns: cols,
+		RowChan: rowChan,
+		ErrChan: errChan,
+	}, nil
+}
+
+func ExtractTableDataSinceStreaming(ctx context.Context, conn *pgxpool.Pool, table, deltaCol, lastSeen string, limit *int) (*StreamResult, error) {
+	cols, err := getColumns(ctx, conn, table)
+	if err != nil {
+		return nil, err
+	}
+
+	rowChan := make(chan []any, 100)
+	errChan := make(chan error, 1)
+
+	go func() {
+		defer close(rowChan)
+		defer close(errChan)
+
+		query := fmt.Sprintf(
+			"SELECT * FROM %s WHERE %s > $1 ORDER BY %s ASC",
+			pgx.Identifier{table}.Sanitize(),
+			deltaCol,
+			deltaCol,
+		)
+
+		var rows pgx.Rows
+		var err error
+		if limit != nil && *limit > 0 {
+			query += " LIMIT $2"
+			rows, err = conn.Query(ctx, query, lastSeen, *limit)
+		} else {
+			rows, err = conn.Query(ctx, query, lastSeen)
+		}
+		if err != nil {
+			errChan <- fmt.Errorf("failed to query delta rows: %w", err)
+			return
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			values, err := rows.Values()
+			if err != nil {
+				errChan <- fmt.Errorf("failed to get delta row values: %w", err)
+				return
+			}
+
+			for i, val := range values {
+				var uuidBytes []byte
+				switch v := val.(type) {
+				case [16]byte:
+					uuidBytes = v[:]
+				case []byte:
+					uuidBytes = v
+				}
+
+				if uuidBytes != nil && (cols[i].Type == "uuid" || cols[i].Type == "bytea") {
+					if len(uuidBytes) == 16 {
+						values[i] = fmt.Sprintf("%x-%x-%x-%x-%x", uuidBytes[0:4], uuidBytes[4:6], uuidBytes[6:8], uuidBytes[8:10], uuidBytes[10:16])
+					}
+				}
+			}
+
+			select {
+			case rowChan <- values:
+			case <-ctx.Done():
+				errChan <- ctx.Err()
+				return
+			}
+		}
+
+		if err := rows.Err(); err != nil {
+			errChan <- fmt.Errorf("error iterating delta rows: %w", err)
+		}
+	}()
+
+	return &StreamResult{
+		Columns: cols,
+		RowChan: rowChan,
+		ErrChan: errChan,
+	}, nil
+}
