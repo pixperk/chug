@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"context"
-
 	"github.com/pixperk/chug/internal/db"
 	"github.com/pixperk/chug/internal/logx"
 	"github.com/pixperk/chug/internal/ui"
@@ -25,21 +23,19 @@ var connectCmd = &cobra.Command{
 		log := logx.StyledLog
 
 		log.Info("Testing PostgreSQL connection...")
-		conn, err := db.ConnectPostgres(pgURL)
+		_, err := db.GetPostgresPool(pgURL)
 		if err != nil {
 			log.Error("PostgreSQL connection failed", zap.Error(err))
 			return
 		}
-		defer conn.Close(context.Background())
 		log.Success("PostgreSQL connected successfully")
 
 		log.Info("Testing ClickHouse connection...")
-		chConn, err := db.ConnectClickHouse(chURL)
+		_, err = db.GetClickHousePool(chURL)
 		if err != nil {
 			log.Error("ClickHouse connection failed", zap.Error(err))
 			return
 		}
-		defer chConn.Close()
 		log.Success("ClickHouse connected successfully")
 
 		ui.PrintBox("Connection Status", "Both database connections are working correctly.")

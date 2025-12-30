@@ -11,15 +11,11 @@ import (
 )
 
 func CreateTable(chURL, ddl string) error {
-	conn, err := db.ConnectClickHouse(chURL)
+	conn, err := db.GetClickHousePool(chURL)
 	if err != nil {
 		return err
 	}
 
-	defer conn.Close()
-
-	// DDL statements should be validated separately since they're more complex
-	// Here we're assuming the DDL is trusted input or has been validated elsewhere
 	_, err = conn.ExecContext(context.Background(), ddl)
 	if err != nil {
 		return fmt.Errorf("failed to create table: %w", err)
@@ -41,11 +37,11 @@ func InsertRows(chURL, table string, columns []string, rows [][]any, batchSize i
 		}
 	}
 
-	conn, err := db.ConnectClickHouse(chURL)
+	conn, err := db.GetClickHousePool(chURL)
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+
 	// Quote each column name to prevent SQL injection
 	quotedColumns := make([]string, len(columns))
 	for i, col := range columns {

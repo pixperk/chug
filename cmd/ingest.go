@@ -52,13 +52,12 @@ var ingestCmd = &cobra.Command{
 				"Batch Size: "+ui.HighlightStyle.Render(UI_itoa(cfg.BatchSize))+" rows\n"+
 				"Limit: "+ui.HighlightStyle.Render(UI_itoa(cfg.Limit))+" rows")
 
-		// Connect to PostgreSQL
-		conn, err := db.ConnectPostgres(cfg.PostgresURL)
+		// Connect to PostgreSQL pool
+		conn, err := db.GetPostgresPool(cfg.PostgresURL)
 		if err != nil {
 			log.Error("Failed to connect to PostgreSQL", zap.Error(err))
 			return
 		}
-		defer conn.Close(ctx)
 
 		// Extract data from PostgreSQL
 		log.Info("Extracting data from PostgreSQL...")
@@ -80,14 +79,6 @@ var ingestCmd = &cobra.Command{
 			log.Error("Failed to build DDL query", zap.Error(err))
 			return
 		}
-
-		// Connect to ClickHouse
-		chConn, err := db.ConnectClickHouse(cfg.ClickHouseURL)
-		if err != nil {
-			log.Error("Failed to connect to ClickHouse", zap.Error(err))
-			return
-		}
-		defer chConn.Close()
 
 		// Create table in ClickHouse
 		log.Info("Creating table in ClickHouse...")

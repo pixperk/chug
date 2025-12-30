@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pixperk/chug/internal/etl"
 	"github.com/pixperk/chug/internal/logx"
 	"go.uber.org/zap"
@@ -21,11 +21,11 @@ type PollConfig struct {
 }
 
 type Poller struct {
-	conn   *pgx.Conn
+	conn   *pgxpool.Pool
 	config PollConfig
 }
 
-func NewPoller(conn *pgx.Conn, config PollConfig) *Poller {
+func NewPoller(conn *pgxpool.Pool, config PollConfig) *Poller {
 	return &Poller{
 		conn:   conn,
 		config: config,

@@ -29,12 +29,11 @@ func startPolling(ctx context.Context, cfg *config.Config, lastSeen string) erro
 			"Interval: "+fmt.Sprintf("%d seconds", cfg.Polling.Interval)+"\n"+
 			"Starting From: "+startFrom)
 
-	// Connect to PostgreSQL for polling
-	pgConn, err := db.ConnectPostgres(cfg.PostgresURL)
+	// Connect to PostgreSQL pool for polling
+	pgConn, err := db.GetPostgresPool(cfg.PostgresURL)
 	if err != nil {
 		return fmt.Errorf("failed to connect to PostgreSQL for polling: %w", err)
 	}
-	defer pgConn.Close(ctx)
 
 	// Define how to handle new data
 	processNewData := func(data *etl.TableData) error {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Column struct {
@@ -17,7 +18,7 @@ type TableData struct {
 	Rows    [][]any
 }
 
-func getColumns(ctx context.Context, conn *pgx.Conn, table string) ([]Column, error) {
+func getColumns(ctx context.Context, conn *pgxpool.Pool, table string) ([]Column, error) {
 	colQuery := `
 		SELECT column_name, data_type
 		FROM information_schema.columns
@@ -45,7 +46,7 @@ func getColumns(ctx context.Context, conn *pgx.Conn, table string) ([]Column, er
 	return cols, nil
 }
 
-func ExtractTableData(ctx context.Context, conn *pgx.Conn, table string, limit *int) (*TableData, error) {
+func ExtractTableData(ctx context.Context, conn *pgxpool.Pool, table string, limit *int) (*TableData, error) {
 	cols, err := getColumns(ctx, conn, table)
 	if err != nil {
 		return nil, err
@@ -102,7 +103,7 @@ func ExtractTableData(ctx context.Context, conn *pgx.Conn, table string, limit *
 }
 
 // polling use case
-func ExtractTableDataSince(ctx context.Context, conn *pgx.Conn, table, deltaCol, lastSeen string, limit *int) (*TableData, error) {
+func ExtractTableDataSince(ctx context.Context, conn *pgxpool.Pool, table, deltaCol, lastSeen string, limit *int) (*TableData, error) {
 	cols, err := getColumns(ctx, conn, table)
 	if err != nil {
 		return nil, err
