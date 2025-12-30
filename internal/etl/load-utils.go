@@ -1,32 +1,30 @@
 package etl
 
+import "strings"
+
 func join(arr []string, sep string) string {
-	if len(arr) == 0 {
-		return ""
-	}
-	if len(arr) == 1 {
-		return arr[0]
-	}
-	return arr[0] + sep + join(arr[1:], sep)
+	return strings.Join(arr, sep)
 }
 
 func buildValuesPlaceholders(rowCount, colCount int) string {
-	s := ""
-	for i := range rowCount {
-		s += "("
-		for j := range colCount {
-			s += "?"
-			if j < colCount-1 {
-				s += ", "
-			}
+	var builder strings.Builder
+	// Pre-allocate approximate capacity: "(?,?,...)" * rowCount
+	builder.Grow(rowCount * (colCount*2 + 3))
 
+	for i := 0; i < rowCount; i++ {
+		builder.WriteString("(")
+		for j := 0; j < colCount; j++ {
+			builder.WriteString("?")
+			if j < colCount-1 {
+				builder.WriteString(", ")
+			}
 		}
-		s += ")"
+		builder.WriteString(")")
 		if i < rowCount-1 {
-			s += ", "
+			builder.WriteString(", ")
 		}
 	}
-	return s
+	return builder.String()
 }
 
 func flatten(matrix [][]any) []any {
