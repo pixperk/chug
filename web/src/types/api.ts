@@ -34,13 +34,20 @@ export interface PollingConfig {
   interval_seconds: number;
 }
 
-export interface IngestRequest {
-  tables: string[];
-  pg_url?: string;
-  ch_url?: string;
+export interface TableConfigRequest {
+  name: string;
   limit?: number;
   batch_size?: number;
   polling?: PollingConfig;
+}
+
+export interface IngestRequest {
+  tables: TableConfigRequest[];
+  pg_url?: string;
+  ch_url?: string;
+  limit?: number;        // Default for tables without specific config
+  batch_size?: number;   // Default batch size
+  polling?: PollingConfig; // Default polling config
 }
 
 export interface ConnectionTestResult {

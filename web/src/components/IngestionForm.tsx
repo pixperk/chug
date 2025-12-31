@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Database, Play, ArrowRight, RefreshCw } from 'lucide-react';
+import { Database, Play, ArrowRight } from 'lucide-react';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
-import { NumberInput } from './ui/NumberInput';
+import { Checkbox } from './ui/Checkbox';
 import { useTables } from '../hooks/useTables';
-import { useColumns } from '../hooks/useColumns';
 import { useCreateJob } from '../hooks/useJobs';
+import { TableConfigItem } from './TableConfigItem';
+import type { TableConfigRequest } from '../types/api';
 
 interface IngestionFormProps {
   onSuccess?: () => void;
@@ -14,17 +15,9 @@ interface IngestionFormProps {
 export function IngestionForm({ onSuccess }: IngestionFormProps) {
   const [pgUrl, setPgUrl] = useState('');
   const [chUrl, setChUrl] = useState('');
-  const [selectedTables, setSelectedTables] = useState<string[]>([]);
-  const [limit, setLimit] = useState('');
-  const [batchSize, setBatchSize] = useState('500');
-
-  // CDC/Polling state
-  const [enablePolling, setEnablePolling] = useState(false);
-  const [pollingInterval, setPollingInterval] = useState('60');
-  const [deltaColumn, setDeltaColumn] = useState('');
+  const [tableConfigs, setTableConfigs] = useState<Map<string, Omit<TableConfigRequest, 'name'>>>(new Map());
 
   const { data: tablesData, refetch: loadTables, isLoading: isLoadingTables } = useTables(pgUrl);
-  const { data: columnsData } = useColumns(selectedTables[0] || '', enablePolling ? pgUrl : undefined);
   const createJobMutation = useCreateJob();
 
   const handleLoadTables = async () => {
@@ -32,38 +25,57 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
     await loadTables();
   };
 
+  const handleTableToggle = (tableName: string, checked: boolean) => {
+    const newConfigs = new Map(tableConfigs);
+    if (checked) {
+      newConfigs.set(tableName, {});
+    } else {
+      newConfigs.delete(tableName);
+    }
+    setTableConfigs(newConfigs);
+  };
+
+  const handleTableConfigChange = (tableName: string, config: Omit<TableConfigRequest, 'name'>) => {
+    const newConfigs = new Map(tableConfigs);
+    newConfigs.set(tableName, config);
+    setTableConfigs(newConfigs);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (selectedTables.length === 0) {
+    if (tableConfigs.size === 0) {
       alert('Please select at least one table');
       return;
     }
 
-    if (enablePolling && !deltaColumn) {
-      alert('Please select a delta column for CDC/Polling');
-      return;
+    // Check if any table with CDC enabled is missing a delta column
+    for (const [tableName, config] of tableConfigs.entries()) {
+      if (config.polling?.enabled && !config.polling.delta_column) {
+        alert(`Please select a delta column for table: ${tableName}`);
+        return;
+      }
     }
 
+    // Convert Map to array of TableConfigRequest
+    const tables: TableConfigRequest[] = Array.from(tableConfigs.entries()).map(([name, config]) => ({
+      name,
+      ...config,
+    }));
+
     createJobMutation.mutate({
-      tables: selectedTables,
+      tables,
       pg_url: pgUrl || undefined,
       ch_url: chUrl || undefined,
-      limit: limit ? parseInt(limit) : undefined,
-      batch_size: batchSize ? parseInt(batchSize) : undefined,
-      polling: enablePolling ? {
-        enabled: true,
-        delta_column: deltaColumn,
-        interval_seconds: parseInt(pollingInterval) || 60,
-      } : undefined,
     }, {
       onSuccess: () => {
-        setSelectedTables([]);
-        setDeltaColumn('');
+        setTableConfigs(new Map());
         if (onSuccess) onSuccess();
       }
     });
   };
+
+  const selectedTables = Array.from(tableConfigs.keys());
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -105,30 +117,21 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
           </Button>
         </div>
 
+        {/* Table Selection */}
         <div className="w-full bg-gray-900 border border-gray-800 rounded-lg p-2 min-h-[120px] max-h-[200px] overflow-y-auto custom-scrollbar">
           {tablesData?.tables && tablesData.tables.length > 0 ? (
             <div className="space-y-1">
               {tablesData.tables.map((table) => (
-                <label
+                <div
                   key={table}
-                  className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-800/50 cursor-pointer transition-colors group"
+                  className="px-2 py-1.5 rounded hover:bg-gray-800/50 transition-colors"
                 >
-                  <input
-                    type="checkbox"
-                    checked={selectedTables.includes(table)}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedTables([...selectedTables, table]);
-                      } else {
-                        setSelectedTables(selectedTables.filter(t => t !== table));
-                      }
-                    }}
-                    className="w-4 h-4 rounded border-gray-700 bg-gray-800 text-accent focus:ring-accent/50 focus:ring-2 cursor-pointer"
+                  <Checkbox
+                    checked={tableConfigs.has(table)}
+                    onChange={(e) => handleTableToggle(table, e.target.checked)}
+                    label={table}
                   />
-                  <span className="text-sm text-gray-300 group-hover:text-foreground transition-colors">
-                    {table}
-                  </span>
-                </label>
+                </div>
               ))}
             </div>
           ) : (
@@ -139,91 +142,32 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <NumberInput
-          label="Limit"
-          placeholder="1000"
-          value={limit}
-          onChange={setLimit}
-          min={1}
-          hint="Max rows per table"
-        />
-
-        <NumberInput
-          label="Batch Size"
-          placeholder="500"
-          value={batchSize}
-          onChange={setBatchSize}
-          min={1}
-          hint="Rows per batch"
-        />
-      </div>
-
-      {/* CDC/Polling Configuration */}
-      <div className="border border-gray-800 rounded-lg p-4 space-y-4 bg-gray-900/30">
-        <div className="flex items-center justify-between">
-          <div>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={enablePolling}
-                onChange={(e) => setEnablePolling(e.target.checked)}
-                className="w-4 h-4 rounded border-gray-700 bg-gray-800 text-accent focus:ring-accent/50 focus:ring-2 cursor-pointer"
+      {/* Per-Table Configuration */}
+      {selectedTables.length > 0 && (
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-3">
+            Table Configuration
+          </label>
+          <div className="space-y-2">
+            {selectedTables.map((tableName) => (
+              <TableConfigItem
+                key={tableName}
+                tableName={tableName}
+                config={tableConfigs.get(tableName)!}
+                onChange={(config) => handleTableConfigChange(tableName, config)}
+                onRemove={() => handleTableToggle(tableName, false)}
+                pgUrl={pgUrl}
               />
-              <span className="text-sm font-medium text-gray-300">
-                <RefreshCw className="w-4 h-4 inline mr-1" />
-                Enable CDC / Polling
-              </span>
-            </label>
-            <p className="text-xs text-gray-500 ml-6 mt-1">
-              Continuously sync new data using a delta column
-            </p>
+            ))}
           </div>
         </div>
-
-        {enablePolling && (
-          <div className="space-y-4 pt-2 border-t border-gray-800">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Delta Column
-                </label>
-                <select
-                  value={deltaColumn}
-                  onChange={(e) => setDeltaColumn(e.target.value)}
-                  className="w-full px-3 py-2 bg-gray-900 border border-gray-800 rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-all duration-200"
-                  required={enablePolling}
-                >
-                  <option value="">Select column...</option>
-                  {columnsData?.columns?.map((col) => (
-                    <option key={col.name} value={col.name}>
-                      {col.name} ({col.data_type})
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1.5 text-xs text-gray-500">
-                  Column to track changes (e.g., updated_at)
-                </p>
-              </div>
-
-              <NumberInput
-                label="Polling Interval"
-                placeholder="60"
-                value={pollingInterval}
-                onChange={setPollingInterval}
-                min={1}
-                hint="Seconds between polls"
-              />
-            </div>
-          </div>
-        )}
-      </div>
+      )}
 
       <Button
         type="submit"
         className="w-full"
         loading={createJobMutation.isPending}
-        disabled={selectedTables.length === 0}
+        disabled={tableConfigs.size === 0}
       >
         <Play className="w-4 h-4" />
         Start Ingestion
@@ -233,7 +177,7 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
       {createJobMutation.isSuccess && (
         <div className="bg-success/10 border border-success/20 rounded-lg p-3">
           <p className="text-sm text-success">
-            Job created successfully! Check Active Jobs below.
+            Job created successfully! Check Jobs tab.
           </p>
         </div>
       )}

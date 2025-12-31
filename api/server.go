@@ -47,13 +47,20 @@ type ProgressUpdate struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-type IngestRequest struct {
-	Tables    []string          `json:"tables"`
-	PgURL     string            `json:"pg_url,omitempty"`
-	ChURL     string            `json:"ch_url,omitempty"`
-	Limit     *int              `json:"limit,omitempty"`
-	BatchSize *int              `json:"batch_size,omitempty"`
+type TableConfigRequest struct {
+	Name      string                `json:"name"`
+	Limit     *int                  `json:"limit,omitempty"`
+	BatchSize *int                  `json:"batch_size,omitempty"`
 	Polling   *config.PollingConfig `json:"polling,omitempty"`
+}
+
+type IngestRequest struct {
+	Tables    []TableConfigRequest `json:"tables"`
+	PgURL     string               `json:"pg_url,omitempty"`
+	ChURL     string               `json:"ch_url,omitempty"`
+	Limit     *int                 `json:"limit,omitempty"`     // Default limit for tables without specific config
+	BatchSize *int                 `json:"batch_size,omitempty"` // Default batch size
+	Polling   *config.PollingConfig `json:"polling,omitempty"`   // Default polling config
 }
 
 type HealthResponse struct {
@@ -278,10 +285,17 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 
 	// Create job
 	jobID := fmt.Sprintf("job_%d", time.Now().UnixNano())
+
+	// Extract table names for job tracking
+	tableNames := make([]string, len(req.Tables))
+	for i, t := range req.Tables {
+		tableNames[i] = t.Name
+	}
+
 	job := &IngestionJob{
 		ID:        jobID,
 		Status:    "pending",
-		Tables:    req.Tables,
+		Tables:    tableNames,
 		Progress:  make([]ProgressUpdate, 0),
 		StartTime: time.Now(),
 	}
@@ -432,13 +446,27 @@ func (s *Server) runIngestion(jobID string, req IngestRequest) {
 		cfg.Polling = *req.Polling
 	}
 
-	// Create table configs
-	for _, table := range req.Tables {
+	// Create table configs using per-table settings
+	for _, tableConfig := range req.Tables {
+		// Use table-specific config if provided, otherwise fall back to defaults
+		limit := tableConfig.Limit
+		if limit == nil {
+			limit = req.Limit
+		}
+		batchSize := tableConfig.BatchSize
+		if batchSize == nil {
+			batchSize = req.BatchSize
+		}
+		polling := tableConfig.Polling
+		if polling == nil {
+			polling = req.Polling
+		}
+
 		cfg.Tables = append(cfg.Tables, config.TableConfig{
-			Name:      table,
-			Limit:     req.Limit,
-			BatchSize: req.BatchSize,
-			Polling:   req.Polling,
+			Name:      tableConfig.Name,
+			Limit:     limit,
+			BatchSize: batchSize,
+			Polling:   polling,
 		})
 	}
 
