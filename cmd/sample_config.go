@@ -23,26 +23,46 @@ var sampleConfigCmd = &cobra.Command{
 # PostgreSQL connection URL
 pg_url: "postgres://postgres:password@localhost:5432/mydb?sslmode=disable"
 
-# ClickHouse HTTP interface URL
+# ClickHouse connection URL
+# Local: http://localhost:9000
+# Cloud: https://username:password@host.clickhouse.cloud:9440
 ch_url: "http://localhost:9000"
 
-# Table to ingest from Postgres
-table: UserAnswer
+# --- Single Table Mode ---
+# Uncomment to ingest a single table
+# table: "users"
+# limit: 1000          # Max rows (0 = unlimited)
+# batch_size: 500      # Rows per batch
+# polling:
+#   enabled: false
+#   delta_column: "updated_at"
+#   interval_seconds: 30
 
-# Max rows to fetch
-limit: 1000
+# --- Multi-Table Mode (Recommended) ---
+# Comment out 'table' above and use 'tables' below for multiple tables
 
-# Batch size per insert
-batch_size: 200
+# Global defaults (apply to all tables unless overridden)
+limit: 0
+batch_size: 500
 
-# Polling configuration
-polling:
-  # Enable polling for changes after initial ingest
-  enabled: false
-  # Column name to track changes (usually a timestamp)
-  delta_column: "updated_at"
-  # Polling interval in seconds
-  interval_seconds: 30
+tables:
+  # Simple table (uses global defaults)
+  - name: "users"
+
+  # Table with custom batch size
+  - name: "orders"
+    batch_size: 1000
+
+  # Table with polling enabled
+  - name: "events"
+    polling:
+      enabled: true
+      delta_column: "updated_at"
+      interval_seconds: 60
+
+  # Table with custom limit
+  - name: "products"
+    limit: 10000
 `
 		log.Info("Creating sample configuration file...")
 
@@ -56,8 +76,9 @@ polling:
 
 		ui.PrintBox("Next Steps",
 			"1. Edit .chug.yaml with your database credentials\n"+
-				"2. Configure your table and polling settings\n"+
-				"3. Run 'chug ingest' to start data transfer")
+				"2. Choose single-table or multi-table mode\n"+
+				"3. Configure your tables and settings\n"+
+				"4. Run 'chug ingest' to start data transfer")
 	},
 }
 
