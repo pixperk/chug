@@ -395,7 +395,23 @@ func startTablePolling(ctx context.Context, cfg *config.Config, tableConfig conf
 	}
 
 	if deltaColIndex != -1 && lastRow != nil {
-		lastSeenValue = fmt.Sprintf("%v", lastRow[deltaColIndex])
+		// Format the last seen value properly for PostgreSQL
+		switch v := lastRow[deltaColIndex].(type) {
+		case time.Time:
+			lastSeenValue = v.Format("2006-01-02 15:04:05.999999")
+		case string:
+			lastSeenValue = v
+		case int, int64, int32, int16, int8:
+			lastSeenValue = fmt.Sprintf("%d", v)
+		case float64, float32:
+			lastSeenValue = fmt.Sprintf("%f", v)
+		default:
+			if t, ok := v.(time.Time); ok {
+				lastSeenValue = t.Format("2006-01-02 15:04:05.999999")
+			} else {
+				lastSeenValue = fmt.Sprintf("%v", v)
+			}
+		}
 	}
 
 	pollingCfg := &config.Config{

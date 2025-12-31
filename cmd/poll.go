@@ -97,7 +97,8 @@ func determineLastSeen(td *etl.TableData, deltaCol string) (string, error) {
 
 	switch v := lastRow[deltaColIndex].(type) {
 	case time.Time:
-		lastSeenValue = v.Format(time.RFC3339Nano)
+		// Format as PostgreSQL-compatible timestamp
+		lastSeenValue = v.Format("2006-01-02 15:04:05.999999")
 	case string:
 		lastSeenValue = v
 	case int, int64, int32, int16, int8:
@@ -105,7 +106,12 @@ func determineLastSeen(td *etl.TableData, deltaCol string) (string, error) {
 	case float64, float32:
 		lastSeenValue = fmt.Sprintf("%f", v)
 	default:
-		lastSeenValue = fmt.Sprintf("%v", v)
+		// Fallback: try to convert to time.Time first
+		if t, ok := v.(time.Time); ok {
+			lastSeenValue = t.Format("2006-01-02 15:04:05.999999")
+		} else {
+			lastSeenValue = fmt.Sprintf("%v", v)
+		}
 	}
 
 	log.Info("Determined last seen value for delta tracking",
