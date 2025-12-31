@@ -56,17 +56,19 @@ function AppContent() {
       <div className="max-w-6xl mx-auto px-6 py-8">
         {/* Header */}
         <header className="mb-8 animate-slide-up">
-          <div className="relative backdrop-blur-xl bg-gradient-to-r from-gray-900/40 via-gray-800/30 to-gray-900/40 rounded-2xl border border-gray-800/50 p-6 overflow-hidden">
-            {/* Glassmorphic overlay */}
-            <div className="absolute inset-0 bg-gradient-to-br from-accent/5 via-transparent to-purple-500/5 pointer-events-none" />
+          <div className="relative backdrop-blur-xl bg-gradient-to-br from-gray-900/50 via-gray-800/40 to-gray-900/50 rounded-xl border border-gray-700/50 p-8 overflow-hidden shadow-2xl">
+            {/* Glassmorphic glow */}
+            <div className="absolute inset-0 bg-gradient-to-br from-accent/10 via-transparent to-blue-500/10 pointer-events-none opacity-50" />
+            <div className="absolute -top-24 -right-24 w-48 h-48 bg-accent/20 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
 
             {/* Content */}
             <div className="relative flex items-center justify-between">
               <div>
-                <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-white via-gray-100 to-gray-300 bg-clip-text text-transparent mb-2">
+                <h1 className="text-5xl font-bold tracking-tight text-white mb-2 drop-shadow-lg">
                   Chug
                 </h1>
-                <p className="text-sm text-gray-400">
+                <p className="text-sm text-gray-300 font-medium">
                   PostgreSQL to ClickHouse ETL Pipeline
                 </p>
               </div>
