@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pixperk/chug/internal/db"
@@ -113,35 +115,62 @@ func InsertRowsStreaming(ctx context.Context, chURL, table string, columns []str
 	quotedTable := QuoteIdentifier(table)
 	insertPrefix := fmt.Sprintf("INSERT INTO %s %s VALUES ", quotedTable, colNames)
 
-	batch := make([][]any, 0, batchSize)
-	totalRows := 0
+	numWorkers := 4
+	batchChan := make(chan [][]any, numWorkers*2)
 
-	for row := range rowChan {
-		batch = append(batch, row)
+	var wg sync.WaitGroup
+	var totalRows atomic.Int64
+	errChan := make(chan error, numWorkers)
 
-		if len(batch) >= batchSize {
-			if err := insertBatch(ctx, conn, insertPrefix, batch, len(columns), table); err != nil {
-				return err
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for batch := range batchChan {
+				if err := insertBatch(ctx, conn, insertPrefix, batch, len(columns), table); err != nil {
+					select {
+					case errChan <- err:
+					default:
+					}
+					return
+				}
+				totalRows.Add(int64(len(batch)))
+				logx.Logger.Info("Worker inserted batch",
+					zap.Int("worker_id", workerID),
+					zap.Int("batch_rows", len(batch)),
+					zap.String("table", table),
+					zap.Int64("total_rows", totalRows.Load()))
 			}
-			totalRows += len(batch)
-			logx.Logger.Info("Inserted batch into ClickHouse",
-				zap.Int("batch_rows", len(batch)),
-				zap.String("table", table),
-				zap.Int("total_rows", totalRows))
-			batch = make([][]any, 0, batchSize)
-		}
+		}(i)
 	}
 
-	if len(batch) > 0 {
-		if err := insertBatch(ctx, conn, insertPrefix, batch, len(columns), table); err != nil {
-			return err
+	go func() {
+		batch := make([][]any, 0, batchSize)
+		for row := range rowChan {
+			batch = append(batch, row)
+
+			if len(batch) >= batchSize {
+				batchChan <- batch
+				batch = make([][]any, 0, batchSize)
+			}
 		}
-		totalRows += len(batch)
-		logx.Logger.Info("Inserted final batch into ClickHouse",
-			zap.Int("batch_rows", len(batch)),
-			zap.String("table", table),
-			zap.Int("total_rows", totalRows))
+
+		if len(batch) > 0 {
+			batchChan <- batch
+		}
+		close(batchChan)
+	}()
+
+	wg.Wait()
+	close(errChan)
+
+	if err := <-errChan; err != nil {
+		return err
 	}
+
+	logx.Logger.Info("All batches inserted successfully",
+		zap.String("table", table),
+		zap.Int64("total_rows", totalRows.Load()))
 
 	return nil
 }
