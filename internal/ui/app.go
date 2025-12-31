@@ -113,7 +113,6 @@ func (m AppModel) renderMainView() string {
 		HighlightStyle.Render("Available Commands:"),
 		InfoStyle.Render("connect   - Test database connections"),
 		InfoStyle.Render("ingest    - Transfer data from PostgreSQL to ClickHouse"),
-		InfoStyle.Render("export    - Export data from ClickHouse to CSV"),
 		InfoStyle.Render("sample-config - Generate a sample configuration file"),
 	))
 
