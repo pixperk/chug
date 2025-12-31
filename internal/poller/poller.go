@@ -70,15 +70,25 @@ func (p *Poller) Start(ctx context.Context) error {
 				if col.Name == p.config.DeltaCol {
 					switch v := lastRow[i].(type) {
 					case time.Time:
-						lastSeen = v.Format(time.RFC3339Nano)
+						// Format as PostgreSQL-compatible timestamp
+						lastSeen = v.Format("2006-01-02 15:04:05.999999")
 					case string:
 						lastSeen = v
-					case int, int64, int32, int16, int8:
+					case int, int64:
+						lastSeen = fmt.Sprintf("%d", v)
+					case int32, int16, int8:
+						lastSeen = fmt.Sprintf("%d", v)
+					case uint, uint64, uint32, uint16, uint8:
 						lastSeen = fmt.Sprintf("%d", v)
 					case float64, float32:
 						lastSeen = fmt.Sprintf("%f", v)
 					default:
-						lastSeen = fmt.Sprintf("%v", v)
+						// Fallback: try to convert to time.Time first
+						if t, ok := v.(time.Time); ok {
+							lastSeen = t.Format("2006-01-02 15:04:05.999999")
+						} else {
+							lastSeen = fmt.Sprintf("%v", v)
+						}
 					}
 					break
 				}

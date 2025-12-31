@@ -22,8 +22,8 @@ services:
     image: clickhouse/clickhouse-server:23.10
     container_name: chug_clickhouse
     ports:
-      - "8123:8123"   # HTTP
-      - "9000:9000"   # Native TCP
+      - "8123:8123" # HTTP
+      - "9000:9000" # Native TCP
     ulimits:
       nofile:
         soft: 262144

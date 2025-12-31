@@ -1,4 +1,4 @@
-.PHONY: help bench bench-local bench-remote bench-both bench-all bench-extract bench-insert bench-cdc bench-multi bench-setup clean
+.PHONY: help bench bench-local bench-remote bench-both bench-all bench-extract bench-insert bench-cdc bench-multi bench-setup clean add-data clean-db hydrate
 
 BENCH_TABLE ?= bench_data
 BENCH_ITERATIONS ?= 20
@@ -9,6 +9,11 @@ export $(shell sed 's/=.*//' .env)
 
 help:
 	@echo "CHUG Benchmark Commands"
+	@echo ""
+	@echo "Database Management:"
+	@echo "  make hydrate              - Create and populate sample tables (users, products, orders, events)"
+	@echo "  make add-data             - Add more data to orders and events tables"
+	@echo "  make clean-db             - Clean all tables from PostgreSQL and ClickHouse"
 	@echo ""
 	@echo "Setup:"
 	@echo "  make bench-setup-local    - Create benchmark tables in LOCAL database"
@@ -139,3 +144,23 @@ bench-go-mem:
 	@echo "Running benchmarks with memory profiling..."
 	@go test -bench=. -benchmem -memprofile=mem.prof ./internal/etl/
 	@echo "View profile with: go tool pprof mem.prof"
+
+# Database management
+hydrate:
+	@echo "🌊 Hydrating database with sample data..."
+	@psql $(LOCAL_PG) -f scripts/sample_schema.sql
+	@echo "✅ Database hydrated! Tables: users, products, orders, events"
+
+add-data:
+	@echo "Adding sample data to orders and events tables..."
+	@./scripts/add_sample_data.sh $(ORDERS_COUNT) $(EVENTS_COUNT)
+
+clean-db:
+	@echo "⚠️  Warning: This will delete ALL tables and data from local databases!"
+	@read -p "Are you sure? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		./scripts/cleanup_databases.sh; \
+	else \
+		echo "Cancelled."; \
+	fi

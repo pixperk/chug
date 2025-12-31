@@ -19,6 +19,69 @@ CHUG streams data from PostgreSQL to ClickHouse with optimized performance and c
 - Change data capture via delta column polling
 - Zero-config quick start with sensible defaults
 
+## Quick Start
+
+Get started with CHUG in 3 steps using Docker:
+
+### 1. Start Local Databases
+
+```bash
+# Start PostgreSQL and ClickHouse
+docker-compose up -d
+
+# Verify containers are running
+docker ps
+```
+
+### 2. Populate Sample Data
+
+```bash
+# Create 4 sample tables with sample data (easiest way!)
+make hydrate
+
+# Or manually:
+# psql "postgresql://chugger:secret@localhost:5433/chugdb" < scripts/sample_schema.sql
+
+# Add more data to existing tables
+make add-data ORDERS_COUNT=100 EVENTS_COUNT=500
+```
+
+### 3. Run Multi-Table Ingestion
+
+```bash
+# Build CHUG
+go build -o chug
+
+# Generate and edit config
+./chug sample-config
+# Edit .chug.yaml with your table settings
+
+# Run ingestion (uses .chug.yaml)
+./chug ingest
+
+# Or with verbose logging to see everything
+./chug ingest --verbose
+```
+
+**Database Management:**
+```bash
+# Hydrate with sample data (creates 4 tables)
+make hydrate
+
+# Add more sample data to orders and events
+make add-data ORDERS_COUNT=200 EVENTS_COUNT=1000
+
+# Clean all tables and start fresh
+make clean-db
+```
+
+That's it! Your data is now streaming from PostgreSQL to ClickHouse in parallel.
+
+**Ultra-Quick Start (3 commands):**
+```bash
+docker-compose up -d && make hydrate && ./chug ingest
+```
+
 ## Architecture
 
 ```mermaid
