@@ -1,4 +1,4 @@
-.PHONY: help bench bench-local bench-remote bench-both bench-all bench-extract bench-insert bench-cdc bench-multi bench-setup clean add-data clean-db hydrate
+.PHONY: help bench bench-local bench-remote bench-both bench-all bench-extract bench-insert bench-cdc bench-multi bench-setup clean add-data update-data clean-db hydrate
 
 BENCH_TABLE ?= bench_data
 BENCH_ITERATIONS ?= 20
@@ -13,6 +13,7 @@ help:
 	@echo "Database Management:"
 	@echo "  make hydrate              - Create and populate sample tables (users, products, orders, events)"
 	@echo "  make add-data             - Add more data to orders and events tables"
+	@echo "  make update-data          - Update existing events (tests CDC update detection)"
 	@echo "  make clean-db             - Clean all tables from PostgreSQL and ClickHouse"
 	@echo ""
 	@echo "Setup:"
@@ -154,6 +155,10 @@ hydrate:
 add-data:
 	@echo "Adding sample data to orders and events tables..."
 	@./scripts/add_sample_data.sh $(ORDERS_COUNT) $(EVENTS_COUNT)
+
+update-data:
+	@echo "Updating sample data in events table..."
+	@./scripts/update_sample_data.sh $(UPDATE_COUNT)
 
 clean-db:
 	@echo "⚠️  Warning: This will delete ALL tables and data from local databases!"

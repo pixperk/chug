@@ -330,10 +330,106 @@ chug ingest \
 | `--poll-interval` | Poll interval (seconds) | - |
 | `--verbose`, `-v` | Enable verbose logging | false |
 
-## Change Data Capture
+## Change Data Capture (CDC)
 
-Enable continuous sync with polling:
+CHUG implements polling-based CDC with automatic update deduplication using ClickHouse ReplacingMergeTree.
 
+### Architecture
+
+```mermaid
+graph TB
+    subgraph PostgreSQL
+        PG[(PostgreSQL)]
+        PG_DATA[Table with updated_at]
+    end
+
+    subgraph CHUG
+        INIT[Initial Full Sync]
+        DETECT[Primary Key Detection]
+        POLL[Polling Loop<br/>Every N seconds]
+        QUERY["SELECT * FROM table<br/>WHERE updated_at > last_seen"]
+    end
+
+    subgraph ClickHouse
+        CH[(ClickHouse)]
+        RMT[ReplacingMergeTree<br/>with _dedup_key]
+        HASH[Hash PK Columns<br/>cityHash64 tuple id]
+        DEDUP[Background Deduplication<br/>Keep latest updated_at]
+        FINAL[Query with FINAL<br/>for deduplicated view]
+    end
+
+    PG_DATA --> INIT
+    INIT --> DETECT
+    DETECT --> |"Query PG for<br/>PRIMARY KEY"| RMT
+    INIT --> |"1000 rows"| RMT
+
+    POLL --> QUERY
+    QUERY --> |"WHERE updated_at > X"| PG_DATA
+    PG_DATA --> |"50 updated rows"| RMT
+
+    RMT --> HASH
+    HASH --> |"Same hash = same row"| DEDUP
+    DEDUP --> |"1000 deduplicated rows"| FINAL
+
+    style INIT fill:#90EE90
+    style POLL fill:#87CEEB
+    style DEDUP fill:#FFB6C1
+    style FINAL fill:#FFD700
+```
+
+### Quick Start with YAML
+
+```yaml
+tables:
+  - name: "events"
+    polling:
+      enabled: true
+      delta_column: "updated_at"
+      interval_seconds: 60
+```
+
+Then run:
+```bash
+./chug ingest
+```
+
+### How It Works
+
+**1. Initial Sync + Primary Key Detection**
+- Performs full table ingestion
+- Queries PostgreSQL `information_schema` for primary key columns
+- Creates ClickHouse table with `ReplacingMergeTree` engine
+- Adds `_dedup_key` column: `cityHash64(tuple(pk_columns))`
+
+**2. Polling Loop**
+- Tracks MAX(delta_column) as `last_seen`
+- Every N seconds, queries: `SELECT * WHERE delta_column > last_seen`
+- Inserts new/updated rows to ClickHouse
+- Updates `last_seen` to latest timestamp
+
+**3. Update Deduplication**
+- PostgreSQL UPDATE triggers `updated_at` change
+- Row gets re-inserted to ClickHouse with new data
+- ReplacingMergeTree detects same primary key hash
+- Keeps version with latest `updated_at` timestamp
+- Query with `FINAL` to see deduplicated results
+
+**Example Flow:**
+```sql
+-- PostgreSQL: Update row id=5
+UPDATE events SET severity='critical', updated_at=NOW() WHERE id=5;
+
+-- ClickHouse: Two versions temporarily stored
+-- Old: hash(id=5), severity='warning', updated_at='10:00'
+-- New: hash(id=5), severity='critical', updated_at='10:05'
+
+-- ReplacingMergeTree deduplication
+SELECT * FROM events FINAL;  -- Returns 1 row with latest data
+```
+
+### Configuration
+
+**CLI Flags:**
 ```bash
 chug ingest \
   --table "events" \
@@ -342,17 +438,21 @@ chug ingest \
   --poll-interval 60
 ```
 
-**How it works:**
+**YAML Config (Recommended):**
+```yaml
+tables:
+  - name: "events"
+    polling:
+      enabled: true
+      delta_column: "updated_at"
+      interval_seconds: 60
+```
 
-1. Initial full table sync
-2. Track last seen value of delta column
-3. Poll for rows where `delta_column > last_value`
-4. Auto-create B-tree index for fast queries
-5. Stream incremental changes
+### Requirements
 
-**Requirements:**
-
-- Delta column must be monotonically increasing (timestamp, serial, etc.)
+**Delta Column:**
+- Must be monotonically increasing (timestamp, serial)
+- Indexed automatically by CHUG for performance
 - For UPDATE detection, add trigger:
 
 ```sql
@@ -364,9 +464,27 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER update_trigger
-BEFORE UPDATE ON tablename
+CREATE TRIGGER update_events_timestamp
+BEFORE UPDATE ON events
 FOR EACH ROW EXECUTE FUNCTION update_timestamp();
+```
+
+### Primary Key Detection
+
+CHUG automatically detects primary keys from PostgreSQL:
+- Queries `information_schema.table_constraints`
+- Supports single and composite primary keys
+- Falls back to all columns if no PK detected
+
+### Testing Updates
+
+```bash
+# Update some rows in PostgreSQL
+make update-data UPDATE_COUNT=100
+
+# Verify deduplication
+docker exec chug_clickhouse clickhouse-client --query \
+  "SELECT COUNT(*) FROM events FINAL;"
 ```
 
 ## Type Mapping

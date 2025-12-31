@@ -18,6 +18,36 @@ type TableData struct {
 	Rows    [][]any
 }
 
+func GetPrimaryKeyColumns(ctx context.Context, conn *pgxpool.Pool, table string) ([]string, error) {
+	query := `
+		SELECT kcu.column_name
+		FROM information_schema.table_constraints tc
+		JOIN information_schema.key_column_usage kcu
+			ON tc.constraint_name = kcu.constraint_name
+			AND tc.table_schema = kcu.table_schema
+		WHERE tc.constraint_type = 'PRIMARY KEY'
+			AND tc.table_name = $1
+		ORDER BY kcu.ordinal_position
+	`
+
+	rows, err := conn.Query(ctx, query, table)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var pkCols []string
+	for rows.Next() {
+		var colName string
+		if err := rows.Scan(&colName); err != nil {
+			return nil, err
+		}
+		pkCols = append(pkCols, colName)
+	}
+
+	return pkCols, rows.Err()
+}
+
 func getColumns(ctx context.Context, conn *pgxpool.Pool, table string) ([]Column, error) {
 	colQuery := `
 		SELECT column_name, data_type

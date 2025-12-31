@@ -252,7 +252,17 @@ func ingestSingleTable(ctx context.Context, cfg *config.Config, tableConfig conf
 	log.Success("Started streaming extraction", zap.Int("columns", len(stream.Columns)))
 
 	log.Info("Building ClickHouse table schema...")
-	ddl, err := etl.BuildDDLQuery(tableConfig.Name, stream.Columns)
+
+	// Query for primary key columns if CDC is enabled
+	var pkCols []string
+	if tableConfig.Polling.Enabled {
+		pkCols, err = etl.GetPrimaryKeyColumns(ctx, pgConn, tableConfig.Name)
+		if err != nil {
+			log.Warn("Could not detect primary key, using all columns for deduplication", zap.Error(err))
+		}
+	}
+
+	ddl, err := etl.BuildDDLQuery(tableConfig.Name, stream.Columns, tableConfig.Polling.Enabled, tableConfig.Polling.DeltaCol, pkCols)
 	if err != nil {
 		result.Error = fmt.Errorf("DDL generation failed: %w", err)
 		return result
