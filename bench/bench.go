@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pixperk/chug/internal/config"
 	"github.com/pixperk/chug/internal/etl"
 )
 
@@ -209,42 +210,29 @@ func (b *Benchmarker) BenchmarkMultiTable(tables []string, rowsPerTable, batchSi
 		Durations:  make([]time.Duration, 0, b.Iterations),
 	}
 
-	// Warmup
-	for i := 0; i < b.Warmup; i++ {
-		for _, table := range tables {
-			stream, _ := etl.ExtractTableDataStreaming(b.Ctx, b.PgPool, table, &rowsPerTable)
-			for range stream.RowChan {
-			}
-		}
+	// Build config for multi-table ingestion
+	cfg := &config.Config{
+		PostgresURL:   b.PgPool.Config().ConnString(),
+		ClickHouseURL: b.ChURL,
+		Limit:         &rowsPerTable,
+		BatchSize:     &batchSize,
 	}
 
-	// Actual benchmark
+	var tableConfigs []config.TableConfig
+	for _, table := range tables {
+		tableConfigs = append(tableConfigs, config.TableConfig{Name: table})
+	}
+	cfg.Tables = tableConfigs
+
+	// Warmup - run full ingestion pipeline
+	for i := 0; i < b.Warmup; i++ {
+		etl.IngestMultipleTables(b.Ctx, cfg, b.PgPool, nil)
+	}
+
+	// Actual benchmark - measure full ETL pipeline
 	for i := 0; i < b.Iterations; i++ {
 		start := time.Now()
-
-		// Process all tables in parallel (simulating real multi-table ingestion)
-		done := make(chan bool, len(tables))
-		for _, table := range tables {
-			go func(tbl string) {
-				stream, err := etl.ExtractTableDataStreaming(b.Ctx, b.PgPool, tbl, &rowsPerTable)
-				if err != nil {
-					done <- false
-					return
-				}
-
-				rowCount := 0
-				for range stream.RowChan {
-					rowCount++
-				}
-				done <- true
-			}(table)
-		}
-
-		// Wait for all tables to complete
-		for range tables {
-			<-done
-		}
-
+		etl.IngestMultipleTables(b.Ctx, cfg, b.PgPool, nil)
 		duration := time.Since(start)
 		result.Durations = append(result.Durations, duration)
 	}

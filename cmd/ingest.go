@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -33,13 +31,8 @@ var (
 	ingestPollInt   int
 )
 
-type TableResult struct {
-	TableName string
-	Success   bool
-	Error     error
-	RowCount  int64
-	Duration  time.Duration
-}
+// TableResult is now defined in internal/etl package
+type TableResult = etl.TableResult
 
 var ingestCmd = &cobra.Command{
 	Use:   "ingest",
@@ -234,111 +227,69 @@ func validateConfig(cfg *config.Config) bool {
 }
 
 func ingestSingleTable(ctx context.Context, cfg *config.Config, tableConfig config.ResolvedTableConfig, pgConn *pgxpool.Pool) TableResult {
-	startTime := time.Now()
-	result := TableResult{
-		TableName: tableConfig.Name,
-		Success:   false,
+	// Create logging callbacks
+	opts := &etl.IngestOptions{
+		OnTableStart: func(tableName string) {
+			log := logx.StyledLog.With(zap.String("table", tableName))
+			log.Info("Extracting data from PostgreSQL (streaming)...")
+		},
+		OnExtractStart: func(tableName string, columnCount int) {
+			log := logx.StyledLog.With(zap.String("table", tableName))
+			log.Success("Started streaming extraction", zap.Int("columns", columnCount))
+			log.Info("Building ClickHouse table schema...")
+			log.Info("Creating table in ClickHouse...")
+		},
+		OnInsertStart: func(tableName string) {
+			log := logx.StyledLog.With(zap.String("table", tableName))
+			log.Info("Inserting data into ClickHouse (streaming)...")
+		},
+		OnTableComplete: func(tableName string, rowCount int64, duration time.Duration) {
+			log := logx.StyledLog.With(zap.String("table", tableName))
+			log.Success("Ingestion completed", zap.Int64("rows", rowCount), zap.Duration("duration", duration))
+		},
+		OnTableError: func(tableName string, err error) {
+			log := logx.StyledLog.With(zap.String("table", tableName))
+			log.Error("Ingestion failed", zap.Error(err))
+		},
+		StartPolling: func(ctx context.Context, tableConfig config.ResolvedTableConfig) {
+			startTablePolling(ctx, cfg, tableConfig, pgConn)
+		},
 	}
 
-	log := logx.StyledLog.With(zap.String("table", tableConfig.Name))
-
-	log.Info("Extracting data from PostgreSQL (streaming)...")
-	stream, err := etl.ExtractTableDataStreaming(ctx, pgConn, tableConfig.Name, &tableConfig.Limit)
-	if err != nil {
-		result.Error = fmt.Errorf("extraction failed: %w", err)
-		return result
-	}
-
-	log.Success("Started streaming extraction", zap.Int("columns", len(stream.Columns)))
-
-	log.Info("Building ClickHouse table schema...")
-
-	// Query for primary key columns if CDC is enabled
-	var pkCols []string
-	if tableConfig.Polling.Enabled {
-		pkCols, err = etl.GetPrimaryKeyColumns(ctx, pgConn, tableConfig.Name)
-		if err != nil {
-			log.Warn("Could not detect primary key, using all columns for deduplication", zap.Error(err))
-		}
-	}
-
-	ddl, err := etl.BuildDDLQuery(tableConfig.Name, stream.Columns, tableConfig.Polling.Enabled, tableConfig.Polling.DeltaCol, pkCols)
-	if err != nil {
-		result.Error = fmt.Errorf("DDL generation failed: %w", err)
-		return result
-	}
-
-	log.Info("Creating table in ClickHouse...")
-	if err := etl.CreateTable(cfg.ClickHouseURL, ddl); err != nil {
-		result.Error = fmt.Errorf("table creation failed: %w", err)
-		return result
-	}
-
-	log.Info("Inserting data into ClickHouse (streaming)...")
-	var rowCount atomic.Int64
-	rowChan := make(chan []any, 100)
-
-	go func() {
-		for row := range stream.RowChan {
-			rowChan <- row
-			rowCount.Add(1)
-		}
-		close(rowChan)
-	}()
-
-	if err := etl.InsertRowsStreaming(ctx, cfg.ClickHouseURL, tableConfig.Name, etl.GetColumnNames(stream.Columns), rowChan, tableConfig.BatchSize); err != nil {
-		result.Error = fmt.Errorf("insertion failed: %w", err)
-		return result
-	}
-
-	select {
-	case err := <-stream.ErrChan:
-		if err != nil {
-			result.Error = fmt.Errorf("extraction error: %w", err)
-			return result
-		}
-	default:
-	}
-
-	result.Success = true
-	result.RowCount = rowCount.Load()
-	result.Duration = time.Since(startTime)
-
-	log.Success("Ingestion completed", zap.Int64("rows", result.RowCount), zap.Duration("duration", result.Duration))
-
-	if tableConfig.Polling.Enabled {
-		go startTablePolling(ctx, cfg, tableConfig, pgConn)
-	}
-
-	return result
+	return etl.IngestSingleTable(ctx, pgConn, cfg.ClickHouseURL, tableConfig, opts)
 }
 
 func ingestMultipleTables(ctx context.Context, cfg *config.Config, pgConn *pgxpool.Pool) []TableResult {
-	tableConfigs := cfg.GetEffectiveTableConfigs()
-	resultChan := make(chan TableResult, len(tableConfigs))
-	var wg sync.WaitGroup
-
-	for _, tc := range tableConfigs {
-		wg.Add(1)
-		go func(tableConfig config.TableConfig) {
-			defer wg.Done()
-			resolved := cfg.ResolveTableConfig(tableConfig)
-			result := ingestSingleTable(ctx, cfg, resolved, pgConn)
-			resultChan <- result
-		}(tc)
+	// Create logging callbacks
+	opts := &etl.IngestOptions{
+		OnTableStart: func(tableName string) {
+			log := logx.StyledLog.With(zap.String("table", tableName))
+			log.Info("Extracting data from PostgreSQL (streaming)...")
+		},
+		OnExtractStart: func(tableName string, columnCount int) {
+			log := logx.StyledLog.With(zap.String("table", tableName))
+			log.Success("Started streaming extraction", zap.Int("columns", columnCount))
+			log.Info("Building ClickHouse table schema...")
+			log.Info("Creating table in ClickHouse...")
+		},
+		OnInsertStart: func(tableName string) {
+			log := logx.StyledLog.With(zap.String("table", tableName))
+			log.Info("Inserting data into ClickHouse (streaming)...")
+		},
+		OnTableComplete: func(tableName string, rowCount int64, duration time.Duration) {
+			log := logx.StyledLog.With(zap.String("table", tableName))
+			log.Success("Ingestion completed", zap.Int64("rows", rowCount), zap.Duration("duration", duration))
+		},
+		OnTableError: func(tableName string, err error) {
+			log := logx.StyledLog.With(zap.String("table", tableName))
+			log.Error("Ingestion failed", zap.Error(err))
+		},
+		StartPolling: func(ctx context.Context, tableConfig config.ResolvedTableConfig) {
+			startTablePolling(ctx, cfg, tableConfig, pgConn)
+		},
 	}
 
-	go func() {
-		wg.Wait()
-		close(resultChan)
-	}()
-
-	var results []TableResult
-	for result := range resultChan {
-		results = append(results, result)
-	}
-
-	return results
+	return etl.IngestMultipleTables(ctx, cfg, pgConn, opts)
 }
 
 func printResultsSummary(results []TableResult) {
