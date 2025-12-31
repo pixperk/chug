@@ -35,6 +35,14 @@ func startPolling(ctx context.Context, cfg *config.Config, lastSeen string) erro
 		return fmt.Errorf("failed to connect to PostgreSQL for polling: %w", err)
 	}
 
+	// Ensure index exists on delta column for fast polling
+	log.Info("Checking/creating index on delta column...")
+	if err := etl.EnsureDeltaColumnIndex(context.Background(), pgConn, cfg.Table, cfg.Polling.DeltaCol); err != nil {
+		log.Warn("Could not create index on delta column (continuing anyway)", zap.Error(err))
+	} else {
+		log.Success("Index ready on delta column", zap.String("column", cfg.Polling.DeltaCol))
+	}
+
 	// Define how to handle new data
 	processNewData := func(data *etl.TableData) error {
 		if len(data.Rows) > 0 {

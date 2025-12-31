@@ -170,6 +170,41 @@ func GetColumnNames(cols []Column) []string {
 	return names
 }
 
+func EnsureDeltaColumnIndex(ctx context.Context, conn *pgxpool.Pool, table, deltaCol string) error {
+	indexName := fmt.Sprintf("idx_%s_%s_chug", table, deltaCol)
+
+	checkQuery := `
+		SELECT COUNT(*)
+		FROM pg_indexes
+		WHERE tablename = $1
+		AND indexname = $2
+	`
+
+	var count int
+	err := conn.QueryRow(ctx, checkQuery, table, indexName).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("failed to check for index: %w", err)
+	}
+
+	if count > 0 {
+		return nil
+	}
+
+	createQuery := fmt.Sprintf(
+		"CREATE INDEX IF NOT EXISTS %s ON %s (%s)",
+		pgx.Identifier{indexName}.Sanitize(),
+		pgx.Identifier{table}.Sanitize(),
+		pgx.Identifier{deltaCol}.Sanitize(),
+	)
+
+	_, err = conn.Exec(ctx, createQuery)
+	if err != nil {
+		return fmt.Errorf("failed to create index on %s.%s: %w", table, deltaCol, err)
+	}
+
+	return nil
+}
+
 type StreamResult struct {
 	Columns []Column
 	RowChan <-chan []any

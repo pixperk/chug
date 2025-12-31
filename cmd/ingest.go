@@ -122,6 +122,14 @@ var ingestCmd = &cobra.Command{
 		if cfg.Polling.Enabled {
 			ui.PrintSubtitle("Starting Change Data Polling")
 
+			// Ensure index on delta column
+			log.Info("Ensuring index on delta column for efficient polling...")
+			if err := etl.EnsureDeltaColumnIndex(ctx, conn, cfg.Table, cfg.Polling.DeltaCol); err != nil {
+				log.Warn("Could not create index on delta column (continuing anyway)", zap.Error(err))
+			} else {
+				log.Success("Index ready on delta column", zap.String("column", cfg.Polling.DeltaCol))
+			}
+
 			if lastRow != nil {
 				deltaColIndex := -1
 				for i, col := range stream.Columns {
