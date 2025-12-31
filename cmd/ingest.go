@@ -3,8 +3,13 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pixperk/chug/internal/config"
 	"github.com/pixperk/chug/internal/db"
 	"github.com/pixperk/chug/internal/etl"
@@ -28,6 +33,14 @@ var (
 	ingestPollInt   int
 )
 
+type TableResult struct {
+	TableName string
+	Success   bool
+	Error     error
+	RowCount  int64
+	Duration  time.Duration
+}
+
 var ingestCmd = &cobra.Command{
 	Use:   "ingest",
 	Short: "Ingest data from PostgreSQL to ClickHouse",
@@ -39,115 +52,90 @@ var ingestCmd = &cobra.Command{
 		log := logx.StyledLog
 		log.Info("Starting ingestion process...")
 
-		// Load configuration from file or flags
 		cfg := loadConfig()
 
-		// Validate configuration
-		if !validateConfig(cfg) {
+		if cfg.PostgresURL == "" || cfg.ClickHouseURL == "" {
+			log.Error("Missing required config values",
+				zap.String("pg_url", cfg.PostgresURL),
+				zap.String("ch_url", cfg.ClickHouseURL))
 			return
 		}
-		// Show config summary
-		ui.PrintBox("Configuration",
-			"PostgreSQL: Connected\n"+
-				"ClickHouse: Connected\n"+
-				"Target Table: "+cfg.Table+"\n"+
-				"Batch Size: "+ui.HighlightStyle.Render(UI_itoa(cfg.BatchSize))+" rows\n"+
-				"Limit: "+ui.HighlightStyle.Render(UI_itoa(cfg.Limit))+" rows")
 
-		// Connect to PostgreSQL pool
-		conn, err := db.GetPostgresPool(cfg.PostgresURL)
+		pgConn, err := db.GetPostgresPool(cfg.PostgresURL)
 		if err != nil {
 			log.Error("Failed to connect to PostgreSQL", zap.Error(err))
 			return
 		}
 
-		// Extract data from PostgreSQL (streaming)
-		log.Info("Extracting data from PostgreSQL (streaming)...")
-		stream, err := etl.ExtractTableDataStreaming(ctx, conn, cfg.Table, &cfg.Limit)
-		if err != nil {
-			log.Error("Failed to start extraction from PostgreSQL", zap.Error(err))
+		tableConfigs := cfg.GetEffectiveTableConfigs()
+
+		if len(tableConfigs) == 0 {
+			log.Error("No tables specified. Use --table, --tables flag, or configure tables in YAML")
 			return
 		}
 
-		log.Success("Started streaming extraction",
-			zap.String("table", cfg.Table),
-			zap.Int("columns", len(stream.Columns)))
+		if len(tableConfigs) == 1 {
+			ui.PrintSubtitle("Single Table Ingestion")
 
-		// Build DDL query for ClickHouse
-		log.Info("Building ClickHouse table schema...")
-		ddl, err := etl.BuildDDLQuery(cfg.Table, stream.Columns)
-		if err != nil {
-			log.Error("Failed to build DDL query", zap.Error(err))
-			return
-		}
+			resolved := cfg.ResolveTableConfig(tableConfigs[0])
 
-		// Create table in ClickHouse
-		log.Info("Creating table in ClickHouse...")
-		if err := etl.CreateTable(cfg.ClickHouseURL, ddl); err != nil {
-			log.Error("Failed to create table in ClickHouse", zap.Error(err))
-			return
-		}
+			ui.PrintBox("Configuration",
+				fmt.Sprintf("PostgreSQL: Connected\n"+
+					"ClickHouse: Connected\n"+
+					"Target Table: %s\n"+
+					"Batch Size: %s rows\n"+
+					"Limit: %s rows",
+					resolved.Name,
+					ui.HighlightStyle.Render(UI_itoa(resolved.BatchSize)),
+					ui.HighlightStyle.Render(UI_itoa(resolved.Limit))))
 
-		// Insert rows into ClickHouse (streaming)
-		log.Info("Inserting data into ClickHouse (streaming)...")
+			result := ingestSingleTable(ctx, cfg, resolved, pgConn)
 
-		var lastRow []any
-		var lastSeenValue string
-		rowChan := make(chan []any, 100)
+			if result.Success {
+				log.Success("Ingestion completed successfully",
+					zap.String("table", result.TableName),
+					zap.Int64("rows", result.RowCount))
 
-		go func() {
-			for row := range stream.RowChan {
-				lastRow = row
-				rowChan <- row
-			}
-			close(rowChan)
-		}()
-
-		if err := etl.InsertRowsStreaming(ctx, cfg.ClickHouseURL, cfg.Table, etl.GetColumnNames(stream.Columns), rowChan, cfg.BatchSize); err != nil {
-			log.Error("Failed to insert rows into ClickHouse", zap.Error(err))
-			return
-		}
-
-		select {
-		case err := <-stream.ErrChan:
-			if err != nil {
-				log.Error("Extraction error", zap.Error(err))
-				return
-			}
-		default:
-		}
-
-		log.Success("Initial ingest completed successfully",
-			zap.String("table", cfg.Table))
-
-		// Start polling if enabled
-		if cfg.Polling.Enabled {
-			ui.PrintSubtitle("Starting Change Data Polling")
-
-			// Ensure index on delta column
-			log.Info("Ensuring index on delta column for efficient polling...")
-			if err := etl.EnsureDeltaColumnIndex(ctx, conn, cfg.Table, cfg.Polling.DeltaCol); err != nil {
-				log.Warn("Could not create index on delta column (continuing anyway)", zap.Error(err))
+				if resolved.Polling.Enabled {
+					ui.PrintSubtitle("Polling Mode Active")
+					select {}
+				}
 			} else {
-				log.Success("Index ready on delta column", zap.String("column", cfg.Polling.DeltaCol))
+				log.Error("Ingestion failed", zap.Error(result.Error))
+				os.Exit(1)
+			}
+		} else {
+			ui.PrintSubtitle(fmt.Sprintf("Multi-Table Ingestion (%d tables)", len(tableConfigs)))
+
+			var tableNames []string
+			for _, tc := range tableConfigs {
+				tableNames = append(tableNames, tc.Name)
 			}
 
-			if lastRow != nil {
-				deltaColIndex := -1
-				for i, col := range stream.Columns {
-					if col.Name == cfg.Polling.DeltaCol {
-						deltaColIndex = i
-						break
-					}
-				}
+			ui.PrintBox("Configuration",
+				fmt.Sprintf("PostgreSQL: Connected\n"+
+					"ClickHouse: Connected\n"+
+					"Tables: %s\n"+
+					"Count: %d",
+					strings.Join(tableNames, ", "),
+					len(tableConfigs)))
 
-				if deltaColIndex != -1 {
-					lastSeenValue = fmt.Sprintf("%v", lastRow[deltaColIndex])
+			results := ingestMultipleTables(ctx, cfg, pgConn)
+			printResultsSummary(results)
+
+			hasPolling := false
+			for _, tc := range tableConfigs {
+				resolved := cfg.ResolveTableConfig(tc)
+				if resolved.Polling.Enabled {
+					hasPolling = true
+					break
 				}
 			}
 
-			if err := startPolling(ctx, cfg, lastSeenValue); err != nil {
-				log.Error("Polling stopped with error", zap.Error(err))
+			if hasPolling {
+				ui.PrintSubtitle("Polling Mode Active for Some Tables")
+				log.Highlight("Running indefinitely - press Ctrl+C to stop")
+				select {}
 			}
 		}
 	},
@@ -243,6 +231,185 @@ func validateConfig(cfg *config.Config) bool {
 		}
 	}
 	return true
+}
+
+func ingestSingleTable(ctx context.Context, cfg *config.Config, tableConfig config.ResolvedTableConfig, pgConn *pgxpool.Pool) TableResult {
+	startTime := time.Now()
+	result := TableResult{
+		TableName: tableConfig.Name,
+		Success:   false,
+	}
+
+	log := logx.StyledLog.With(zap.String("table", tableConfig.Name))
+
+	log.Info("Extracting data from PostgreSQL (streaming)...")
+	stream, err := etl.ExtractTableDataStreaming(ctx, pgConn, tableConfig.Name, &tableConfig.Limit)
+	if err != nil {
+		result.Error = fmt.Errorf("extraction failed: %w", err)
+		return result
+	}
+
+	log.Success("Started streaming extraction", zap.Int("columns", len(stream.Columns)))
+
+	log.Info("Building ClickHouse table schema...")
+	ddl, err := etl.BuildDDLQuery(tableConfig.Name, stream.Columns)
+	if err != nil {
+		result.Error = fmt.Errorf("DDL generation failed: %w", err)
+		return result
+	}
+
+	log.Info("Creating table in ClickHouse...")
+	if err := etl.CreateTable(cfg.ClickHouseURL, ddl); err != nil {
+		result.Error = fmt.Errorf("table creation failed: %w", err)
+		return result
+	}
+
+	log.Info("Inserting data into ClickHouse (streaming)...")
+	var lastRow []any
+	var rowCount atomic.Int64
+	rowChan := make(chan []any, 100)
+
+	go func() {
+		for row := range stream.RowChan {
+			lastRow = row
+			rowChan <- row
+			rowCount.Add(1)
+		}
+		close(rowChan)
+	}()
+
+	if err := etl.InsertRowsStreaming(ctx, cfg.ClickHouseURL, tableConfig.Name, etl.GetColumnNames(stream.Columns), rowChan, tableConfig.BatchSize); err != nil {
+		result.Error = fmt.Errorf("insertion failed: %w", err)
+		return result
+	}
+
+	select {
+	case err := <-stream.ErrChan:
+		if err != nil {
+			result.Error = fmt.Errorf("extraction error: %w", err)
+			return result
+		}
+	default:
+	}
+
+	result.Success = true
+	result.RowCount = rowCount.Load()
+	result.Duration = time.Since(startTime)
+
+	log.Success("Ingestion completed", zap.Int64("rows", result.RowCount), zap.Duration("duration", result.Duration))
+
+	if tableConfig.Polling.Enabled && lastRow != nil {
+		go startTablePolling(ctx, cfg, tableConfig, pgConn, lastRow, stream.Columns)
+	}
+
+	return result
+}
+
+func ingestMultipleTables(ctx context.Context, cfg *config.Config, pgConn *pgxpool.Pool) []TableResult {
+	tableConfigs := cfg.GetEffectiveTableConfigs()
+	resultChan := make(chan TableResult, len(tableConfigs))
+	var wg sync.WaitGroup
+
+	for _, tc := range tableConfigs {
+		wg.Add(1)
+		go func(tableConfig config.TableConfig) {
+			defer wg.Done()
+			resolved := cfg.ResolveTableConfig(tableConfig)
+			result := ingestSingleTable(ctx, cfg, resolved, pgConn)
+			resultChan <- result
+		}(tc)
+	}
+
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	var results []TableResult
+	for result := range resultChan {
+		results = append(results, result)
+	}
+
+	return results
+}
+
+func printResultsSummary(results []TableResult) {
+	log := logx.StyledLog
+
+	successCount := 0
+	failCount := 0
+	totalRows := int64(0)
+
+	ui.PrintSubtitle("Ingestion Results")
+
+	for _, r := range results {
+		if r.Success {
+			successCount++
+			totalRows += r.RowCount
+			log.Success(
+				fmt.Sprintf("Table '%s' completed", r.TableName),
+				zap.Int64("rows", r.RowCount),
+				zap.Duration("duration", r.Duration),
+			)
+		} else {
+			failCount++
+			log.Error(
+				fmt.Sprintf("Table '%s' failed", r.TableName),
+				zap.Error(r.Error),
+			)
+		}
+	}
+
+	ui.PrintBox("Summary",
+		fmt.Sprintf("Total Tables: %d\n", len(results))+
+			fmt.Sprintf("Succeeded: %d\n", successCount)+
+			fmt.Sprintf("Failed: %d\n", failCount)+
+			fmt.Sprintf("Total Rows: %d", totalRows))
+
+	if failCount > 0 {
+		os.Exit(1)
+	}
+}
+
+func startTablePolling(ctx context.Context, cfg *config.Config, tableConfig config.ResolvedTableConfig, pgConn *pgxpool.Pool, lastRow []any, columns []etl.Column) {
+	log := logx.StyledLog.With(zap.String("table", tableConfig.Name))
+
+	if !tableConfig.Polling.Enabled {
+		return
+	}
+
+	log.Info("Ensuring index on delta column for efficient polling...")
+	if err := etl.EnsureDeltaColumnIndex(ctx, pgConn, tableConfig.Name, tableConfig.Polling.DeltaCol); err != nil {
+		log.Warn("Could not create index on delta column", zap.Error(err))
+	} else {
+		log.Success("Index ready on delta column", zap.String("column", tableConfig.Polling.DeltaCol))
+	}
+
+	var lastSeenValue string
+	deltaColIndex := -1
+	for i, col := range columns {
+		if col.Name == tableConfig.Polling.DeltaCol {
+			deltaColIndex = i
+			break
+		}
+	}
+
+	if deltaColIndex != -1 && lastRow != nil {
+		lastSeenValue = fmt.Sprintf("%v", lastRow[deltaColIndex])
+	}
+
+	pollingCfg := &config.Config{
+		PostgresURL:   cfg.PostgresURL,
+		ClickHouseURL: cfg.ClickHouseURL,
+		Table:         tableConfig.Name,
+		BatchSize:     tableConfig.BatchSize,
+		Polling:       tableConfig.Polling,
+	}
+
+	log.Highlight("Starting poller")
+	if err := startPolling(ctx, pollingCfg, lastSeenValue); err != nil && err != context.Canceled {
+		log.Error("Poller stopped with error", zap.Error(err))
+	}
 }
 
 // Helper function to convert int to string for UI
