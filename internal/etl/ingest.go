@@ -25,6 +25,7 @@ type IngestOptions struct {
 	OnTableStart    func(tableName string)
 	OnExtractStart  func(tableName string, columnCount int)
 	OnInsertStart   func(tableName string)
+	OnProgress      func(tableName string, currentRows int64, totalRows int64, percentage float64, phase string)
 	OnTableComplete func(tableName string, rowCount int64, duration time.Duration)
 	OnTableError    func(tableName string, err error)
 	StartPolling    func(ctx context.Context, tableConfig config.ResolvedTableConfig)
@@ -93,6 +94,33 @@ func IngestSingleTable(
 	// Stream rows to ClickHouse
 	var rowCount atomic.Int64
 	rowChan := make(chan []any, 100)
+
+	// Calculate total rows for percentage
+	var totalRows int64
+	if tableConfig.Limit > 0 {
+		totalRows = int64(tableConfig.Limit)
+	}
+
+	// Progress reporting ticker
+	progressTicker := time.NewTicker(500 * time.Millisecond)
+	defer progressTicker.Stop()
+
+	// Goroutine for progress updates
+	go func() {
+		for range progressTicker.C {
+			current := rowCount.Load()
+			if opts != nil && opts.OnProgress != nil && current > 0 {
+				var percentage float64
+				if totalRows > 0 {
+					percentage = float64(current) / float64(totalRows) * 100
+					if percentage > 100 {
+						percentage = 100
+					}
+				}
+				opts.OnProgress(tableConfig.Name, current, totalRows, percentage, "inserting")
+			}
+		}
+	}()
 
 	go func() {
 		for row := range stream.RowChan {

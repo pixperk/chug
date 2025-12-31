@@ -513,15 +513,31 @@ func (s *Server) runIngestion(jobID string, req IngestRequest) {
 				Timestamp: time.Now(),
 			})
 		},
+		OnProgress: func(tableName string, currentRows int64, totalRows int64, percentage float64, phase string) {
+			s.sendUpdate(ProgressUpdate{
+				JobID:       jobID,
+				Table:       tableName,
+				Event:       phase,
+				Message:     fmt.Sprintf("Processing: %d rows", currentRows),
+				CurrentRows: currentRows,
+				TotalRows:   totalRows,
+				Percentage:  percentage,
+				Phase:       phase,
+				Timestamp:   time.Now(),
+			})
+		},
 		OnTableComplete: func(tableName string, rowCount int64, duration time.Duration) {
 			s.sendUpdate(ProgressUpdate{
-				JobID:     jobID,
-				Table:     tableName,
-				Event:     "completed",
-				Message:   "Ingestion completed",
-				RowCount:  rowCount,
-				Duration:  duration.String(),
-				Timestamp: time.Now(),
+				JobID:       jobID,
+				Table:       tableName,
+				Event:       "completed",
+				Message:     "Ingestion completed",
+				RowCount:    rowCount,
+				CurrentRows: rowCount,
+				Percentage:  100,
+				Phase:       "completed",
+				Duration:    duration.String(),
+				Timestamp:   time.Now(),
 			})
 		},
 		OnTableError: func(tableName string, err error) {
