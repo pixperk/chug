@@ -49,14 +49,14 @@ func startPolling(ctx context.Context, cfg *config.Config, lastSeen string, pgCo
 		}
 
 		// Insert the new rows
-		return etl.InsertRows(cfg.ClickHouseURL, cfg.Table, etl.GetColumnNames(data.Columns), data.Rows, cfg.BatchSize)
+		return etl.InsertRows(cfg.ClickHouseURL, cfg.Table, etl.GetColumnNames(data.Columns), data.Rows, *cfg.BatchSize)
 	}
 
 	pollConfig := poller.PollConfig{
 		Table:     cfg.Table,
 		DeltaCol:  cfg.Polling.DeltaCol,
 		Interval:  time.Duration(cfg.Polling.Interval) * time.Second,
-		Limit:     &cfg.Limit,
+		Limit:     cfg.Limit,
 		StartFrom: lastSeen,
 		OnData:    processNewData,
 	}

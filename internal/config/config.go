@@ -11,8 +11,8 @@ type Config struct {
 	PostgresURL   string        `yaml:"pg_url"`
 	ClickHouseURL string        `yaml:"ch_url"`
 	Table         string        `yaml:"table"`
-	Limit         int           `yaml:"limit"`
-	BatchSize     int           `yaml:"batch_size"`
+	Limit         *int          `yaml:"limit"`
+	BatchSize     *int          `yaml:"batch_size"`
 	Polling       PollingConfig `yaml:"polling"`
 	Tables        []TableConfig `yaml:"tables"`
 }
@@ -76,16 +76,16 @@ func (c *Config) ResolveTableConfig(tc TableConfig) ResolvedTableConfig {
 
 	if tc.Limit != nil {
 		resolved.Limit = *tc.Limit
-	} else if c.Limit != 0 {
-		resolved.Limit = c.Limit
+	} else if c.Limit != nil {
+		resolved.Limit = *c.Limit
 	} else {
 		resolved.Limit = 1000
 	}
 
 	if tc.BatchSize != nil {
 		resolved.BatchSize = *tc.BatchSize
-	} else if c.BatchSize != 0 {
-		resolved.BatchSize = c.BatchSize
+	} else if c.BatchSize != nil {
+		resolved.BatchSize = *c.BatchSize
 	} else {
 		resolved.BatchSize = 500
 	}

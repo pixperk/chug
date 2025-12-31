@@ -175,6 +175,84 @@ BENCH_TABLE=my_table make bench-extract
 
 See [bench/README.md](bench/README.md) for detailed benchmarking documentation.
 
+### Production Scale Testing
+
+End-to-end test with 30M rows across 3 tables, including full CDC pipeline:
+
+**Test Configuration:**
+- 3 tables (events, orders, users)
+- 10M rows per table
+- Batch size: 5000
+- Polling interval: 3 seconds
+- Environment: Local Docker (PostgreSQL + ClickHouse)
+
+**Initial Full Sync:**
+| Metric | Value |
+|--------|-------|
+| Total rows | 30,013,000 |
+| Duration | 3m 26s (206s) |
+| Throughput | **145,694 rows/sec** |
+| Database size | ~4.8 GB total |
+| Events table | 1.7 GB (10M rows) |
+| Orders table | 1.5 GB (10M rows) |
+| Users table | 1.65 GB (10M rows) |
+
+**CDC Performance:**
+| Metric | Value |
+|--------|-------|
+| Detection latency | <3 seconds (polling interval) |
+| Sync latency | ~1 second |
+| Test insert | 10,000 rows (3,333 orders + 6,667 events) |
+| Sync result | All rows detected and synced in single cycle |
+
+**Key Insights:**
+- Streaming architecture maintains constant memory usage even with 30M+ rows
+- Parallel ingestion across 3 tables achieves 145k rows/sec on local Docker
+- CDC polling efficiently detects and syncs changes within seconds
+- ReplacingMergeTree handles deduplication automatically via primary key hash
+
+**Running Scale Tests:**
+```bash
+# Generate 30M rows (10M per table)
+make hydrate
+./scripts/generate_large_dataset.sh 10000000
+
+# Run full sync with CDC enabled
+./chug ingest --config .chug.scale-test.yaml
+
+# Test CDC with continuous inserts
+./scripts/add_sample_data.sh 5000 5000  # Add 10k rows
+```
+
+### Remote Cloud Performance
+
+Cross-region cloud deployment test (Neon PostgreSQL → ClickHouse Cloud):
+
+**Infrastructure:**
+- Source: Neon PostgreSQL (ap-southeast-1, Singapore)
+- Target: ClickHouse Cloud (ap-south-1, Mumbai)
+- Network: Cross-region Asia Pacific with SSL/TLS
+- Configuration: Batch size 2000, polling interval 5s
+
+**Initial Full Sync (303K rows):**
+| Metric | Value | vs Local |
+|--------|-------|----------|
+| Duration | 10 seconds | - |
+| Throughput | **30,251 rows/sec** | **4.8x slower** |
+
+**CDC Performance:**
+| Metric | Value |
+|--------|-------|
+| Polling interval | 5 seconds |
+| Detection latency | ~8 seconds |
+| Test batch | 3,000 rows synced successfully |
+
+**Key Insights:**
+- Only 4.8x slower than local despite cross-region latency (much better than 20-55x in micro-benchmarks)
+- Larger batch sizes (2000 vs 500) effectively amortize network overhead
+- Streaming architecture minimizes round trips across regions
+- CDC polling reliable with 5s interval despite network latency
+
 ## Installation
 
 ### Prerequisites

@@ -52,7 +52,7 @@ var ingestCmd = &cobra.Command{
 		log := logx.StyledLog
 		log.Info("Starting ingestion process...")
 
-		cfg := loadConfig()
+		cfg := loadConfig(cmd)
 
 		if cfg.PostgresURL == "" || cfg.ClickHouseURL == "" {
 			log.Error("Missing required config values",
@@ -142,7 +142,7 @@ var ingestCmd = &cobra.Command{
 }
 
 // loadConfig loads configuration from file or flags
-func loadConfig() *config.Config {
+func loadConfig(cmd *cobra.Command) *config.Config {
 	log := logx.StyledLog
 
 	cfg, err := config.Load(ingestConfigPath)
@@ -152,8 +152,8 @@ func loadConfig() *config.Config {
 			PostgresURL:   ingestPgURL,
 			ClickHouseURL: ingestChURL,
 			Table:         ingestTable,
-			Limit:         ingestLimit,
-			BatchSize:     ingestBatch,
+			Limit:         &ingestLimit,
+			BatchSize:     &ingestBatch,
 			Polling: config.PollingConfig{
 				Enabled:  ingestPoll,
 				DeltaCol: ingestPollDelta,
@@ -161,7 +161,7 @@ func loadConfig() *config.Config {
 			},
 		}
 	} else {
-		// Override with flags if provided
+		// Override with flags if explicitly provided by user
 		if ingestPgURL != "" {
 			cfg.PostgresURL = ingestPgURL
 		}
@@ -171,11 +171,11 @@ func loadConfig() *config.Config {
 		if ingestTable != "" {
 			cfg.Table = ingestTable
 		}
-		if ingestLimit != 0 {
-			cfg.Limit = ingestLimit
+		if cmd.Flags().Changed("limit") {
+			cfg.Limit = &ingestLimit
 		}
-		if ingestBatch != 0 {
-			cfg.BatchSize = ingestBatch
+		if cmd.Flags().Changed("batch-size") {
+			cfg.BatchSize = &ingestBatch
 		}
 
 		if ingestPoll {
@@ -430,8 +430,8 @@ func startTablePolling(ctx context.Context, cfg *config.Config, tableConfig conf
 		PostgresURL:   cfg.PostgresURL,
 		ClickHouseURL: cfg.ClickHouseURL,
 		Table:         tableConfig.Name,
-		BatchSize:     tableConfig.BatchSize,
-		Limit:         tableConfig.Limit,
+		BatchSize:     &tableConfig.BatchSize,
+		Limit:         &tableConfig.Limit,
 		Polling:       tableConfig.Polling,
 	}
 
