@@ -47,6 +47,64 @@ flowchart LR
 | 4 parallel workers | 2-5x throughput |
 | Indexed polling | 100-1000x faster CDC |
 
+## Benchmarks
+
+Comprehensive performance testing with percentile metrics (p50, p95, p99) for realistic analysis.
+
+### Local Performance (Docker)
+
+| Operation | p50 Latency | Throughput | Batch Size |
+|-----------|-------------|------------|------------|
+| Extract 10K rows | 8.8ms | 111 ops/sec | - |
+| Extract 100K rows | 85ms | 11.6 ops/sec | - |
+| Insert 10K rows | 11.9ms | 84 ops/sec | 1000 |
+| Insert 10K rows | 17ms | 59 ops/sec | 500 |
+| Insert 50K rows | 39.8ms | 24 ops/sec | 2000 |
+| CDC (10K changes) | 8.7ms | 110 ops/sec | - |
+
+### Remote Performance (Cloud - Asia Pacific)
+
+| Operation | p50 Latency | Throughput | vs Local |
+|-----------|-------------|------------|----------|
+| Extract 10K rows | 482ms | 2.11 ops/sec | **55x slower** |
+| Extract 100K rows | 3.36s | 0.25 ops/sec | **40x slower** |
+| Insert 10K rows (batch 500) | 443ms | 2.25 ops/sec | **26x slower** |
+| Insert 10K rows (batch 1000) | 269ms | 3.72 ops/sec | **23x slower** |
+| Insert 50K rows (batch 2000) | 813ms | 1.15 ops/sec | **20x slower** |
+| CDC (10K changes) | 483ms | 2.08 ops/sec | **55x slower** |
+
+**Key Insights:**
+- Network latency dominates remote performance (20-55x slower)
+- Insertions scale better than extractions (20-26x vs 40-55x slowdown)
+- Larger batches amortize network overhead (batch 1000 is 65% faster than batch 500)
+- CDC performance matches extraction (both ~55x slower for 10K rows)
+
+### Running Benchmarks
+
+**Setup benchmark tables (100K rows):**
+```bash
+make bench-setup-local   # Local Docker
+make bench-setup-remote  # Remote cloud
+```
+
+**Run benchmarks:**
+```bash
+make bench-local         # All benchmarks (local)
+make bench-remote        # All benchmarks (remote)
+make bench-both          # Compare local vs remote
+make bench-extract       # Extraction only
+make bench-insert        # Insertion only
+make bench-cdc           # CDC only
+```
+
+**Custom configuration:**
+```bash
+BENCH_ITERATIONS=50 make bench-local
+BENCH_TABLE=my_table make bench-extract
+```
+
+See [bench/README.md](bench/README.md) for detailed benchmarking documentation.
+
 ## Installation
 
 ### Prerequisites

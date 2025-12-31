@@ -1,6 +1,7 @@
 package db
 
 import (
+	"crypto/tls"
 	"database/sql"
 	"net/url"
 	"strings"
@@ -12,9 +13,10 @@ func ConnectClickHouse(chURL string) (*sql.DB, error) {
 
 	var addr string
 	var username, password, database string
+	var useTLS bool
 
-	// Support both http://localhost:9000 and plain localhost:9000
-	if strings.HasPrefix(chURL, "http://") || strings.HasPrefix(chURL, "tcp://") {
+	// Support http://, https://, tcp://, and plain host:port
+	if strings.HasPrefix(chURL, "http://") || strings.HasPrefix(chURL, "https://") || strings.HasPrefix(chURL, "tcp://") {
 		u, err := url.Parse(chURL)
 		if err != nil {
 			return nil, err
@@ -27,11 +29,12 @@ func ConnectClickHouse(chURL string) (*sql.DB, error) {
 		if db := strings.Trim(u.Path, "/"); db != "" {
 			database = db
 		}
+		useTLS = strings.HasPrefix(chURL, "https://")
 	} else {
 		addr = chURL
 	}
 
-	return clickhouse.OpenDB(&clickhouse.Options{
+	opts := &clickhouse.Options{
 		Addr: []string{addr},
 		Auth: clickhouse.Auth{
 			Database: ifEmpty(database, "default"),
@@ -39,9 +42,17 @@ func ConnectClickHouse(chURL string) (*sql.DB, error) {
 			Password: password,
 		},
 		Settings: clickhouse.Settings{
-			"send_logs_level": "trace", // for debug visibility
+			"send_logs_level": "trace",
 		},
-	}), nil
+	}
+
+	if useTLS {
+		opts.TLS = &tls.Config{
+			InsecureSkipVerify: false,
+		}
+	}
+
+	return clickhouse.OpenDB(opts), nil
 
 }
 
