@@ -87,6 +87,7 @@ func (s *Server) Start(addr string) error {
 	http.HandleFunc("/", s.handleWebUI)
 	http.HandleFunc("/health", s.handleHealth)
 	http.HandleFunc("/api/v1/tables", s.handleListTables)
+	http.HandleFunc("/api/v1/tables/columns", s.handleTableColumns)
 	http.HandleFunc("/api/v1/ingest", s.handleIngest)
 	http.HandleFunc("/api/v1/jobs", s.handleListJobs)
 	http.HandleFunc("/api/v1/jobs/", s.handleJobStatus)
@@ -181,6 +182,79 @@ func (s *Server) handleListTables(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"tables": tables,
+	})
+}
+
+func (s *Server) handleTableColumns(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get parameters from query
+	tableName := r.URL.Query().Get("table")
+	if tableName == "" {
+		http.Error(w, "table parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	pgURL := r.URL.Query().Get("pg_url")
+	if pgURL == "" {
+		pgURL = s.config.PostgresURL
+	}
+
+	if pgURL == "" {
+		http.Error(w, "PostgreSQL URL not configured", http.StatusBadRequest)
+		return
+	}
+
+	// Connect to PostgreSQL
+	pgConn, err := db.GetPostgresPool(pgURL)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to connect to PostgreSQL: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Query for columns of the specified table
+	ctx := context.Background()
+	query := `
+		SELECT column_name, data_type
+		FROM information_schema.columns
+		WHERE table_schema = 'public'
+		AND table_name = $1
+		ORDER BY ordinal_position
+	`
+
+	rows, err := pgConn.Query(ctx, query, tableName)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to query columns: %v", err), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type Column struct {
+		Name     string `json:"name"`
+		DataType string `json:"data_type"`
+	}
+
+	var columns []Column
+	for rows.Next() {
+		var col Column
+		if err := rows.Scan(&col.Name, &col.DataType); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to scan column: %v", err), http.StatusInternalServerError)
+			return
+		}
+		columns = append(columns, col)
+	}
+
+	if err := rows.Err(); err != nil {
+		http.Error(w, fmt.Sprintf("Error iterating columns: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"columns": columns,
 	})
 }
 

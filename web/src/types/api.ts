@@ -28,12 +28,19 @@ export interface IngestionJob {
   error?: string;
 }
 
+export interface PollingConfig {
+  enabled: boolean;
+  delta_column: string;
+  interval_seconds: number;
+}
+
 export interface IngestRequest {
   tables: string[];
   pg_url?: string;
   ch_url?: string;
   limit?: number;
   batch_size?: number;
+  polling?: PollingConfig;
 }
 
 export interface ConnectionTestResult {
@@ -46,8 +53,17 @@ export interface ConnectionTestResponse {
   clickhouse: ConnectionTestResult;
 }
 
+export interface Column {
+  name: string;
+  data_type: string;
+}
+
 export interface TablesResponse {
   tables: string[];
+}
+
+export interface ColumnsResponse {
+  columns: Column[];
 }
 
 export interface JobsResponse {
