@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { Database, Zap, List } from 'lucide-react'
+import { Database, List } from 'lucide-react'
 import { Card } from './components/ui/Card'
 import { Badge } from './components/ui/Badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/ui/Tabs'
@@ -56,26 +56,26 @@ function AppContent() {
       <div className="max-w-6xl mx-auto px-6 py-8">
         {/* Header */}
         <header className="mb-8 animate-slide-up">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <div className="flex items-center gap-2">
-                  <Zap className="w-6 h-6 text-accent" />
-                  <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-                    Chug
-                  </h1>
-                </div>
-                <Badge variant="info">Beta</Badge>
-              </div>
-              <p className="text-sm text-gray-400">
-                PostgreSQL to ClickHouse ETL Pipeline
-              </p>
-            </div>
+          <div className="relative backdrop-blur-xl bg-gradient-to-r from-gray-900/40 via-gray-800/30 to-gray-900/40 rounded-2xl border border-gray-800/50 p-6 overflow-hidden">
+            {/* Glassmorphic overlay */}
+            <div className="absolute inset-0 bg-gradient-to-br from-accent/5 via-transparent to-purple-500/5 pointer-events-none" />
 
-            <div className="flex items-center gap-2">
-              <Badge pulse variant="success">
-                Connected
-              </Badge>
+            {/* Content */}
+            <div className="relative flex items-center justify-between">
+              <div>
+                <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-white via-gray-100 to-gray-300 bg-clip-text text-transparent mb-2">
+                  Chug
+                </h1>
+                <p className="text-sm text-gray-400">
+                  PostgreSQL to ClickHouse ETL Pipeline
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Badge pulse variant="success">
+                  Connected
+                </Badge>
+              </div>
             </div>
           </div>
         </header>
