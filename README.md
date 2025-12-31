@@ -174,13 +174,18 @@ SELECT * FROM users;
 
 ## Configuration
 
-Generate config file:
+**YAML config (recommended)** - Simplest way to manage settings:
 
 ```bash
+# Generate sample config
 chug sample-config
+
+# Edit .chug.yaml with your settings
+# Then run with just:
+chug ingest
 ```
 
-`.chug.yaml`:
+**Example `.chug.yaml`:**
 
 ```yaml
 pg_url: "postgres://user:password@localhost:5432/mydb"
@@ -195,28 +200,56 @@ polling:
   interval_seconds: 30
 ```
 
-## Usage
+**Multi-table config:**
 
-### Commands
+```yaml
+pg_url: "postgres://user:password@localhost:5432/mydb"
+ch_url: "http://localhost:9000"
+batch_size: 500   # Global default
 
-**Test connections:**
-```bash
-chug connect --pg-url <pg-url> --ch-url <ch-url>
+tables:
+  - name: users
+    batch_size: 1000   # Override for this table
+
+  - name: orders
+    limit: 5000
+    polling:
+      enabled: true
+      delta_column: "updated_at"
+      interval_seconds: 60
+
+  - name: products
+    # Uses global defaults
 ```
 
-**Ingest data:**
+## Usage
+
+### Easy Way: YAML Config
+
 ```bash
+# Create config
+chug sample-config
+
+# Run ingestion
+chug ingest                    # Uses .chug.yaml in current directory
+chug ingest --config my.yaml   # Use specific config file
+```
+
+### Alternative: CLI Flags
+
+For quick one-off runs without config files:
+
+```bash
+# Test connections
+chug connect --pg-url <pg-url> --ch-url <ch-url>
+
+# Ingest single table
 chug ingest \
   --pg-url "postgres://user:pass@host:port/db" \
   --ch-url "http://host:port" \
-  --table "tablename" \
+  --table "users" \
   --limit 0 \
   --batch-size 500
-```
-
-**With config file:**
-```bash
-chug ingest --config .chug.yaml
 ```
 
 ### Flags
@@ -232,6 +265,7 @@ chug ingest --config .chug.yaml
 | `--poll` | Enable CDC polling | false |
 | `--poll-delta` | Delta column name | - |
 | `--poll-interval` | Poll interval (seconds) | - |
+| `--verbose`, `-v` | Enable verbose logging | false |
 
 ## Change Data Capture
 

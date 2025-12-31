@@ -11,21 +11,21 @@ Comprehensive benchmarking with percentile metrics (p50, p95, p99, p999) for rea
 docker-compose up -d
 
 # Create benchmark tables (100K rows)
-make bench-setup
+make bench-setup-local    # For local Docker
+make bench-setup-remote   # For cloud databases (requires .env config)
 ```
 
 ### 2. Run Benchmarks
 
-**Local (fast but unrealistic):**
+**Local (Docker - fast but unrealistic):**
 ```bash
 make bench-local
 ```
 
-**Remote (production-like):**
+**Remote (Cloud - production-like, requires .env):**
 ```bash
-make bench-remote \
-  PG_URL="postgres://user:pass@remote-db:5432/db" \
-  CH_URL="http://remote-ch:9000"
+# Configure .env with REMOTE_PG and REMOTE_CLICKHOUSE
+make bench-remote
 ```
 
 **Specific benchmarks:**
@@ -39,14 +39,16 @@ make bench-multi      # Multi-table only
 ## Available Commands
 
 ```bash
-make help             # Show all commands
-make bench-setup      # Create test tables
-make bench-local      # All benchmarks (local)
-make bench-remote     # All benchmarks (remote)
-make bench-all        # Comprehensive suite with results saved
-make bench-comparison # Compare local vs remote
-make bench-regression # Check for regressions
-make clean            # Clean up benchmark artifacts
+make help                # Show all commands
+make bench-setup-local   # Create test tables (local)
+make bench-setup-remote  # Create test tables (remote)
+make bench-local         # All benchmarks (local)
+make bench-remote        # All benchmarks (remote)
+make bench-both          # Compare local vs remote
+make bench-extract       # Extraction benchmarks only
+make bench-insert        # Insertion benchmarks only
+make bench-cdc           # CDC benchmarks only
+make clean               # Clean up benchmark artifacts
 ```
 
 ## Understanding Percentile Metrics
@@ -94,16 +96,20 @@ Network latency dominates remote performance (20x slower)!
 
 ### Cloud Databases
 
-```bash
-# AWS RDS + ClickHouse Cloud
-make bench-remote \
-  PG_URL="postgres://user:pass@rds.amazonaws.com:5432/db" \
-  CH_URL="https://clickhouse.cloud:8443"
+Configure your cloud database URLs in `.env`:
 
-# Google Cloud SQL
-make bench-remote \
-  PG_URL="postgres://user:pass@35.1.2.3:5432/db" \
-  CH_URL="http://34.5.6.7:9000"
+```bash
+# .env file
+REMOTE_PG=postgres://user:pass@rds.amazonaws.com:5432/db
+REMOTE_CLICKHOUSE=https://default:password@clickhouse.cloud:9440
+
+# For ClickHouse Cloud, use HTTPS with port 9440 (native protocol)
+# For self-hosted ClickHouse, use http://host:9000
+```
+
+Then run:
+```bash
+make bench-remote
 ```
 
 ### Simulate Network Latency

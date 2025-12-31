@@ -13,15 +13,19 @@ import (
 
 var (
 	useInteractive bool
+	verboseLogging bool
 )
 
 var rootCmd = &cobra.Command{
 	Use:   "chug",
 	Short: "Chug is a blazing-fast ETL pipeline from Postgres to ClickHouse",
-	Long: `Chug streams data from your Postgres tables into ClickHouse 
-for analytics at ludicrous speed. 
+	Long: `Chug streams data from your Postgres tables into ClickHouse
+for analytics at ludicrous speed.
 Just point, chug, and ask.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		// Initialize logger with verbosity level
+		logx.InitLoggerWithLevel(verboseLogging)
+
 		// If interactive mode is enabled and no subcommand, show interactive UI
 		if useInteractive && cmd.Name() == "chug" {
 			showInteractiveUI()
@@ -55,6 +59,7 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(&useInteractive, "interactive", "i", false, "Use interactive TUI mode")
+	rootCmd.PersistentFlags().BoolVarP(&verboseLogging, "verbose", "v", false, "Enable verbose logging (shows all operations)")
 }
 
 // showInteractiveUI launches the interactive TUI
