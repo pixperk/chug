@@ -383,9 +383,11 @@ func startTablePolling(ctx context.Context, cfg *config.Config, tableConfig conf
 	log := logx.StyledLog.With(zap.String("table", tableConfig.Name))
 
 	if !tableConfig.Polling.Enabled {
+		log.Warn("Polling not enabled, skipping")
 		return
 	}
 
+	log.Highlight(fmt.Sprintf("📊 Starting CDC polling for table '%s'", tableConfig.Name))
 	log.Info("Ensuring index on delta column for efficient polling...")
 	if err := etl.EnsureDeltaColumnIndex(ctx, pgConn, tableConfig.Name, tableConfig.Polling.DeltaCol); err != nil {
 		log.Warn("Could not create index on delta column", zap.Error(err))
@@ -429,12 +431,15 @@ func startTablePolling(ctx context.Context, cfg *config.Config, tableConfig conf
 		ClickHouseURL: cfg.ClickHouseURL,
 		Table:         tableConfig.Name,
 		BatchSize:     tableConfig.BatchSize,
+		Limit:         tableConfig.Limit,
 		Polling:       tableConfig.Polling,
 	}
 
-	log.Highlight("Starting poller")
+	log.Highlight(fmt.Sprintf("Calling startPolling with interval: %d seconds", tableConfig.Polling.Interval))
 	if err := startPolling(ctx, pollingCfg, lastSeenValue); err != nil && err != context.Canceled {
 		log.Error("Poller stopped with error", zap.Error(err))
+	} else if err == context.Canceled {
+		log.Info("Poller stopped (context canceled)")
 	}
 }
 

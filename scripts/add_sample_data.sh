@@ -10,7 +10,7 @@ EVENTS_COUNT="${2:-500}"
 echo "Adding $ORDERS_COUNT orders and $EVENTS_COUNT events to database..."
 
 psql "$PG_URL" <<EOF
--- Add more orders
+-- Add more orders (with current timestamp for CDC detection)
 INSERT INTO orders (user_id, product_id, quantity, total_amount, order_status, created_at, updated_at)
 SELECT
     (random() * 15 + 1)::int,
@@ -24,11 +24,11 @@ SELECT
         WHEN 3 THEN 'completed'
         ELSE 'cancelled'
     END,
-    NOW() - (random() * interval '30 days'),
-    NOW() - (random() * interval '7 days')
+    NOW(),
+    NOW()
 FROM generate_series(1, $ORDERS_COUNT);
 
--- Add more events
+-- Add more events (with current timestamp for CDC detection)
 INSERT INTO events (event_type, user_id, event_data, severity, created_at, updated_at)
 SELECT
     CASE (random() * 7)::int
@@ -49,8 +49,8 @@ SELECT
         WHEN 2 THEN 'error'
         ELSE 'debug'
     END,
-    NOW() - (random() * interval '30 days'),
-    NOW() - (random() * interval '7 days')
+    NOW(),
+    NOW()
 FROM generate_series(1, $EVENTS_COUNT);
 
 -- Show updated counts

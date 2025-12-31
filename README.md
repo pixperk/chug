@@ -91,6 +91,13 @@ flowchart LR
     Chan -->|Batch| Workers[4 Workers]
     Workers -->|Parallel Insert| Pool2[Connection Pool]
     Pool2 --> CH[(ClickHouse)]
+
+    style PG fill:#C62828,stroke:#B71C1C,color:#FFF
+    style Pool1 fill:#1565C0,stroke:#0D47A1,color:#FFF
+    style Chan fill:#6A1B9A,stroke:#4A148C,color:#FFF
+    style Workers fill:#2E7D32,stroke:#1B5E20,color:#FFF
+    style Pool2 fill:#1565C0,stroke:#0D47A1,color:#FFF
+    style CH fill:#EF6C00,stroke:#E65100,color:#FFF
 ```
 
 **Pipeline Flow:**
@@ -334,6 +341,11 @@ chug ingest \
 
 CHUG implements polling-based CDC with automatic update deduplication using ClickHouse ReplacingMergeTree.
 
+**What CDC Detects:**
+- New row INSERTs (with delta_column >= last_seen)
+- Row UPDATEs (deduplicates based on primary key)
+- Row DELETEs are NOT supported (see design decision below)
+
 ### Architecture
 
 ```mermaid
@@ -371,10 +383,10 @@ graph TB
     HASH --> |"Same hash = same row"| DEDUP
     DEDUP --> |"1000 deduplicated rows"| FINAL
 
-    style INIT fill:#90EE90
-    style POLL fill:#87CEEB
-    style DEDUP fill:#FFB6C1
-    style FINAL fill:#FFD700
+    style INIT fill:#2E7D32,stroke:#1B5E20,color:#FFF
+    style POLL fill:#1565C0,stroke:#0D47A1,color:#FFF
+    style DEDUP fill:#6A1B9A,stroke:#4A148C,color:#FFF
+    style FINAL fill:#F57C00,stroke:#E65100,color:#FFF
 ```
 
 ### Quick Start with YAML
@@ -476,8 +488,9 @@ CHUG automatically detects primary keys from PostgreSQL:
 - Supports single and composite primary keys
 - Falls back to all columns if no PK detected
 
-### Testing Updates
+### Testing CDC
 
+**Test Updates (Deduplication):**
 ```bash
 # Update some rows in PostgreSQL
 make update-data UPDATE_COUNT=100
@@ -486,6 +499,35 @@ make update-data UPDATE_COUNT=100
 docker exec chug_clickhouse clickhouse-client --query \
   "SELECT COUNT(*) FROM events FINAL;"
 ```
+
+**Test Inserts:**
+```bash
+# Add new rows to PostgreSQL
+make add-data EVENTS_COUNT=50
+
+# CDC will detect and sync within interval seconds
+# Verify rows synced
+docker exec chug_clickhouse clickhouse-client --query \
+  "SELECT COUNT(*) FROM events FINAL;"
+```
+
+**Important:** New rows MUST have `updated_at = NOW()` or later than the last synced timestamp. Rows with past timestamps will NOT be detected.
+
+### Design Decision: No Delete Support
+
+CHUG is designed as an **append-only CDC pipeline** optimized for analytics workloads. Row deletions in PostgreSQL are NOT propagated to ClickHouse.
+
+**Rationale:**
+- ClickHouse is typically used for analytics where historical data is valuable
+- Deleted rows often represent important events (canceled orders, removed users) worth analyzing
+- Delete handling adds significant complexity (audit tables, triggers, different table engines)
+- Most production ETL tools (Airbyte, Fivetran) use append-only models for time-series data
+
+**If you need delete tracking:**
+- Implement soft deletes in PostgreSQL (add `deleted_at TIMESTAMP` column)
+- Set `deleted_at = NOW()` instead of DELETE
+- Updates will sync automatically via CDC
+- Query with `WHERE deleted_at IS NULL` for active rows
 
 ## Type Mapping
 

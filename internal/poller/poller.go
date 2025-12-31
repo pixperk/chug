@@ -34,35 +34,28 @@ func NewPoller(conn *pgxpool.Pool, config PollConfig) *Poller {
 
 func (p *Poller) Start(ctx context.Context) error {
 	lastSeen := p.config.StartFrom
+	log := logx.StyledLog.With(zap.String("table", p.config.Table))
 
 	ticker := time.NewTicker(p.config.Interval)
 	defer ticker.Stop()
 
-	logx.Logger.Info("Starting poller",
-		zap.String("table", p.config.Table),
-		zap.Duration("interval", p.config.Interval))
+	log.Highlight(fmt.Sprintf("Poller started (interval: %v)", p.config.Interval))
 
 	for {
 		select {
 		case <-ctx.Done():
-			logx.Logger.Info("Stopping (context cancelled)")
+			log.Info("Poller stopped (context cancelled)")
 			return ctx.Err()
 
 		case <-ticker.C:
-			logx.Logger.Info("Polling for new data",
-				zap.String("table", p.config.Table),
-				zap.String("last_seen", lastSeen))
+			log.Info(fmt.Sprintf("Polling for changes (last_seen: %s)", lastSeen))
 			data, err := etl.ExtractTableDataSince(ctx, p.conn, p.config.Table, p.config.DeltaCol, lastSeen, p.config.Limit)
 			if err != nil {
-				logx.Logger.Error("Failed to extract table data",
-					zap.String("table", p.config.Table),
-					zap.Error(err))
+				log.Error(fmt.Sprintf("Failed to extract data: %v", err))
 				continue
 			}
 			if len(data.Rows) == 0 {
-				logx.Logger.Info("No new data found",
-					zap.String("table", p.config.Table),
-					zap.String("last_seen", lastSeen))
+				log.Info("No new changes detected")
 				continue
 			} //update last seen value
 			lastRow := data.Rows[len(data.Rows)-1]
@@ -94,15 +87,11 @@ func (p *Poller) Start(ctx context.Context) error {
 				}
 			}
 
-			logx.Logger.Info("New data extracted",
-				zap.String("table", p.config.Table),
-				zap.Int("rows", len(data.Rows)),
+			log.Success(fmt.Sprintf("Found %d new rows", len(data.Rows)),
 				zap.String("last_seen", lastSeen))
 
 			if err := p.config.OnData(data); err != nil {
-				logx.Logger.Error("Failed to process extracted data",
-					zap.String("table", p.config.Table),
-					zap.Error(err))
+				log.Error(fmt.Sprintf("Failed to process data: %v", err))
 				continue
 			}
 		}
