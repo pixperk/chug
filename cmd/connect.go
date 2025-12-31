@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"github.com/pixperk/chug/internal/config"
 	"github.com/pixperk/chug/internal/db"
 	"github.com/pixperk/chug/internal/logx"
 	"github.com/pixperk/chug/internal/ui"
@@ -9,8 +10,7 @@ import (
 )
 
 var (
-	pgURL string
-	chURL string
+	connectConfigPath string
 )
 
 var connectCmd = &cobra.Command{
@@ -22,8 +22,28 @@ var connectCmd = &cobra.Command{
 
 		log := logx.StyledLog
 
+		// Load config from YAML file
+		cfg, err := config.Load(connectConfigPath)
+		if err != nil {
+			log.Error("Failed to load config", zap.Error(err))
+			return
+		}
+
+		// Use config values
+		pgURL := cfg.PostgresURL
+		chURL := cfg.ClickHouseURL
+
+		if pgURL == "" {
+			log.Error("PostgreSQL URL not provided (set pg_url in .chug.yaml)")
+			return
+		}
+		if chURL == "" {
+			log.Error("ClickHouse URL not provided (set ch_url in .chug.yaml)")
+			return
+		}
+
 		log.Info("Testing PostgreSQL connection...")
-		_, err := db.GetPostgresPool(pgURL)
+		_, err = db.GetPostgresPool(pgURL)
 		if err != nil {
 			log.Error("PostgreSQL connection failed", zap.Error(err))
 			return
@@ -43,9 +63,6 @@ var connectCmd = &cobra.Command{
 }
 
 func init() {
-	connectCmd.Flags().StringVar(&pgURL, "pg-url", "", "PostgreSQL connection string")
-	connectCmd.Flags().StringVar(&chURL, "ch-url", "", "ClickHouse connection URL")
-	connectCmd.MarkFlagRequired("pg-url")
-	connectCmd.MarkFlagRequired("ch-url")
+	connectCmd.Flags().StringVar(&connectConfigPath, "config", ".chug.yaml", "Path to config file")
 	rootCmd.AddCommand(connectCmd)
 }

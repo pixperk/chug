@@ -157,10 +157,10 @@ add-data:
 
 clean-db:
 	@echo "⚠️  Warning: This will delete ALL tables and data from local databases!"
-	@read -p "Are you sure? [y/N] " -n 1 -r; \
+	@bash -c 'read -p "Are you sure? [y/N] " -n 1 -r; \
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
 		./scripts/cleanup_databases.sh; \
 	else \
 		echo "Cancelled."; \
-	fi
+	fi'

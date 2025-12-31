@@ -1,11 +1,9 @@
-# chug.yaml - Sample Configuration
+# CHUG Configuration - Local Development
 
-# PostgreSQL connection URL
-pg_url: "postgres://postgres:password@localhost:5432/mydb?sslmode=disable"
+# PostgreSQL connection URL (local Docker)
+pg_url: "postgresql://chugger:secret@localhost:5433/chugdb"
 
-# ClickHouse connection URL
-# Local: http://localhost:9000
-# Cloud: https://username:password@host.clickhouse.cloud:9440
+# ClickHouse connection URL (local Docker)
 ch_url: "http://localhost:9000"
 
 # --- Single Table Mode ---

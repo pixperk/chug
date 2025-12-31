@@ -29,10 +29,10 @@ echo ""
 
 # Clean ClickHouse
 echo "Cleaning ClickHouse tables..."
-clickhouse-client --host localhost --port 9000 --query "SHOW TABLES" | while read table; do
+docker exec chug_clickhouse clickhouse-client --query "SHOW TABLES" | while read table; do
     if [ ! -z "$table" ]; then
         echo "  Dropping table: $table"
-        clickhouse-client --host localhost --port 9000 --query "DROP TABLE IF EXISTS $table"
+        docker exec chug_clickhouse clickhouse-client --query "DROP TABLE IF EXISTS $table"
     fi
 done
 
