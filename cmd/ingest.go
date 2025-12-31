@@ -387,7 +387,7 @@ func startTablePolling(ctx context.Context, cfg *config.Config, tableConfig conf
 		return
 	}
 
-	log.Highlight(fmt.Sprintf("📊 Starting CDC polling for table '%s'", tableConfig.Name))
+	log.Highlight(fmt.Sprintf("Starting CDC polling for table '%s'", tableConfig.Name))
 	log.Info("Ensuring index on delta column for efficient polling...")
 	if err := etl.EnsureDeltaColumnIndex(ctx, pgConn, tableConfig.Name, tableConfig.Polling.DeltaCol); err != nil {
 		log.Warn("Could not create index on delta column", zap.Error(err))

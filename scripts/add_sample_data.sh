@@ -68,4 +68,4 @@ SELECT 'events', COUNT(*), pg_size_pretty(pg_total_relation_size('events')) FROM
 ORDER BY table_name;
 EOF
 
-echo "✓ Sample data added successfully!"
+echo "Sample data added successfully!"

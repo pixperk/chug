@@ -148,9 +148,9 @@ bench-go-mem:
 
 # Database management
 hydrate:
-	@echo "🌊 Hydrating database with sample data..."
+	@echo "Hydrating database with sample data..."
 	@psql $(LOCAL_PG) -f scripts/sample_schema.sql
-	@echo "✅ Database hydrated! Tables: users, products, orders, events"
+	@echo "Database hydrated! Tables: users, products, orders, events"
 
 add-data:
 	@echo "Adding sample data to orders and events tables..."
@@ -161,7 +161,7 @@ update-data:
 	@./scripts/update_sample_data.sh $(UPDATE_COUNT)
 
 clean-db:
-	@echo "⚠️  Warning: This will delete ALL tables and data from local databases!"
+	@echo "WARNING: This will delete ALL tables and data from local databases!"
 	@bash -c 'read -p "Are you sure? [y/N] " -n 1 -r; \
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \

@@ -25,12 +25,12 @@ func PrintSubtitle(subtitle string) {
 
 // PrintSuccess prints a success message
 func PrintSuccess(message string) {
-	fmt.Println(SuccessStyle.Render("✓ " + message))
+	fmt.Println(SuccessStyle.Render(message))
 }
 
 // PrintError prints an error message
 func PrintError(message string) {
-	fmt.Println(ErrorStyle.Render("✗ " + message))
+	fmt.Println(ErrorStyle.Render(message))
 }
 
 // PrintWarning prints a warning message

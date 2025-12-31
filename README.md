@@ -192,56 +192,6 @@ go build -o chug
 sudo mv chug /usr/local/bin/
 ```
 
-## Quick Start
-
-### 1. Start Local Environment
-
-```bash
-docker-compose up -d
-```
-
-Services:
-- PostgreSQL: `localhost:5432` (user: chugger, password: secret, db: chugdb)
-- ClickHouse: `localhost:9000`
-- Adminer: `localhost:8080`
-- Tabix: `localhost:8124`
-
-### 2. Create Test Data
-
-Access Adminer at http://localhost:8080:
-
-```sql
-CREATE TABLE users (
-    id SERIAL PRIMARY KEY,
-    username VARCHAR(50),
-    email VARCHAR(100),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-INSERT INTO users (username, email) VALUES
-    ('alice', 'alice@example.com'),
-    ('bob', 'bob@example.com');
-```
-
-### 3. Run Migration
-
-```bash
-chug ingest \
-  --pg-url "postgres://chugger:secret@localhost:5432/chugdb" \
-  --ch-url "http://localhost:9000" \
-  --table "users" \
-  --limit 0
-```
-
-### 4. Verify
-
-Access Tabix at http://localhost:8124:
-
-```sql
-SELECT * FROM users;
-```
-
 ## Configuration
 
 **YAML config (recommended)** - Simplest way to manage settings:

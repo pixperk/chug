@@ -25,7 +25,7 @@ func (s *StyledLogger) Info(msg string, fields ...zap.Field) {
 
 // Success logs a message with INFO level and applies success styling
 func (s *StyledLogger) Success(msg string, fields ...zap.Field) {
-	s.logger.Info("✅ "+msg, fields...)
+	s.logger.Info(msg, fields...)
 	ui.PrintSuccess(msg)
 }
 
