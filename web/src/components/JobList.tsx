@@ -50,20 +50,20 @@ function TableProgressItem({ tableProgress, polling }: TableProgressItemProps) {
 
       {(tableProgress.status === 'extracting' || tableProgress.status === 'inserting') && (
         <div className="mb-2">
-          <Progress value={tableProgress.percentage} size="sm" />
+          <Progress value={tableProgress.percentage || 0} size="sm" />
         </div>
       )}
 
       <div className="flex items-center justify-between text-xs">
         <span className="text-gray-500">
           {tableProgress.total_rows
-            ? `${tableProgress.current_rows.toLocaleString()} / ${tableProgress.total_rows.toLocaleString()} rows`
-            : `${tableProgress.current_rows.toLocaleString()} rows`
+            ? `${(tableProgress.current_rows || 0).toLocaleString()} / ${tableProgress.total_rows.toLocaleString()} rows`
+            : `${(tableProgress.current_rows || 0).toLocaleString()} rows`
           }
         </span>
-        {tableProgress.percentage > 0 && (
+        {(tableProgress.percentage || 0) > 0 && (
           <span className="font-medium text-accent">
-            {tableProgress.percentage.toFixed(1)}%
+            {(tableProgress.percentage || 0).toFixed(1)}%
           </span>
         )}
       </div>
@@ -87,6 +87,9 @@ function JobItem({ job }: { job: IngestionJob }) {
   });
 
   job.tables.forEach(tableName => {
+    // Skip empty or invalid table names
+    if (!tableName || tableName.trim() === '') return;
+
     tableProgressMap.set(tableName, {
       name: tableName,
       status: 'pending',
@@ -96,6 +99,9 @@ function JobItem({ job }: { job: IngestionJob }) {
   });
 
   (job.results || []).forEach(result => {
+    // Skip empty or invalid table names
+    if (!result.name || result.name.trim() === '') return;
+
     tableProgressMap.set(result.name, {
       name: result.name,
       status: result.error ? 'failed' : 'completed',
@@ -107,6 +113,9 @@ function JobItem({ job }: { job: IngestionJob }) {
 
   const latestProgressByTable = new Map<string, typeof job.progress[0]>();
   (job.progress || []).forEach(update => {
+    // Skip empty or invalid table names
+    if (!update.table || update.table.trim() === '') return;
+
     latestProgressByTable.set(update.table, update);
   });
 
@@ -131,7 +140,7 @@ function JobItem({ job }: { job: IngestionJob }) {
   const failedTables = tableProgressList.filter(t => t.status === 'failed').length;
   const totalTables = job.tables.length;
   const overallPercentage = totalTables > 0 ? (completedTables / totalTables) * 100 : 0;
-  const totalRows = tableProgressList.reduce((sum, t) => sum + t.current_rows, 0);
+  const totalRows = tableProgressList.reduce((sum, t) => sum + (t.current_rows || 0), 0);
 
   const statusConfig = {
     pending: { variant: 'default' as const, icon: Clock, color: 'text-gray-400', pulse: false },
@@ -171,9 +180,9 @@ function JobItem({ job }: { job: IngestionJob }) {
             {completedTables} / {totalTables} tables
           </span>
         </div>
-        <Progress value={overallPercentage} showLabel size="md" />
+        <Progress value={overallPercentage || 0} showLabel size="md" />
         <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
-          <span>{totalRows.toLocaleString()} total rows transferred</span>
+          <span>{(totalRows || 0).toLocaleString()} total rows transferred</span>
           {failedTables > 0 && (
             <span className="text-error">{failedTables} failed</span>
           )}

@@ -25,9 +25,9 @@ type TableConfig struct {
 }
 
 type PollingConfig struct {
-	Enabled  bool   `yaml:"enabled"`
-	DeltaCol string `yaml:"delta_column"`
-	Interval int    `yaml:"interval_seconds"`
+	Enabled  bool   `yaml:"enabled" json:"enabled"`
+	DeltaCol string `yaml:"delta_column" json:"delta_column"`
+	Interval int    `yaml:"interval_seconds" json:"interval_seconds"`
 }
 
 type ResolvedTableConfig struct {

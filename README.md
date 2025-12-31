@@ -12,6 +12,7 @@ CHUG streams data from PostgreSQL to ClickHouse with optimized performance and c
 
 **Key Features**
 
+- **Modern Web UI** with real-time progress tracking and CDC configuration
 - Streaming architecture with constant memory footprint
 - Connection pooling for both source and target
 - Parallel batch insertion with 4-worker pool
@@ -81,6 +82,154 @@ That's it! Your data is now streaming from PostgreSQL to ClickHouse in parallel.
 ```bash
 docker-compose up -d && make hydrate && ./chug ingest
 ```
+
+## Web UI & API
+
+CHUG includes a modern web interface for managing ingestion jobs with real-time progress tracking.
+
+### Starting the Web Server
+
+```bash
+# Build and run
+go build -o chug
+./chug web
+
+# Access UI at http://localhost:8080
+```
+
+### Features
+
+**Real-time Progress Tracking:**
+- Live row counts updated every 500ms during insertion
+- Per-table progress bars with percentage indicators
+- Overall job progress across all tables
+- WebSocket-based real-time updates
+- Status tracking: pending → extracting → inserting → completed
+
+**Per-Table Configuration:**
+- Individual limit and batch size per table
+- CDC/Polling settings per table
+- Delta column selection with autocomplete
+- Custom polling intervals
+
+**Modern UI:**
+- Linear/Vercel-inspired design with Poppins font
+- Dark theme with subtle micro-interactions
+- Tabbed interface (New Ingestion / Jobs)
+- Responsive grid layout for table progress
+- CDC badges showing polling status and tracked columns
+
+### API Endpoints
+
+**Connection Testing:**
+```bash
+POST /api/v1/test-connection
+{
+  "pg_url": "postgres://user:pass@host:5432/db",
+  "ch_url": "http://host:9000"
+}
+```
+
+**List Available Tables:**
+```bash
+GET /api/v1/tables?pg_url=postgres://...
+```
+
+**Get Table Columns (for CDC delta column selection):**
+```bash
+GET /api/v1/tables/columns?table=users&pg_url=postgres://...
+```
+
+**Create Ingestion Job:**
+```bash
+POST /api/v1/ingest
+{
+  "tables": [
+    {
+      "name": "users",
+      "limit": 10000,
+      "batch_size": 1000
+    },
+    {
+      "name": "events",
+      "limit": 50000,
+      "batch_size": 2000,
+      "polling": {
+        "enabled": true,
+        "delta_column": "updated_at",
+        "interval_seconds": 60
+      }
+    }
+  ],
+  "pg_url": "postgres://user:pass@host:5432/db",
+  "ch_url": "http://host:9000"
+}
+```
+
+**List Jobs:**
+```bash
+GET /api/v1/jobs
+```
+
+**Get Job Status:**
+```bash
+GET /api/v1/jobs/{job_id}
+```
+
+**WebSocket Progress Updates:**
+```bash
+WS /ws
+
+# Receives real-time progress updates:
+{
+  "job_id": "job_12345",
+  "table": "users",
+  "event": "inserting",
+  "message": "Processing: 5,234 rows",
+  "current_rows": 5234,
+  "total_rows": 10000,
+  "percentage": 52.34,
+  "phase": "inserting",
+  "timestamp": "2025-01-01T10:30:45Z"
+}
+```
+
+### Progress Tracking
+
+The web UI displays comprehensive progress information:
+
+**During Ingestion:**
+- Current rows transferred vs. total (e.g., "5,234 / 10,000 rows")
+- Animated progress bars for each table
+- Real-time percentage updates (e.g., "52.3%")
+- Phase indicators (pending/extracting/inserting/completed/failed)
+
+**CDC Indicators:**
+- Blue CDC badge on tables with polling enabled
+- Delta column being tracked (e.g., "Tracking: updated_at")
+- Polling interval display (e.g., "Interval: 60s")
+
+**Job Overview:**
+- Total jobs, running, completed, failed counts
+- Per-job overall progress (X / Y tables completed)
+- Total rows transferred across all tables
+- Failed table count with error messages
+
+### Technology Stack
+
+**Frontend:**
+- React 18 with TypeScript
+- Vite for fast builds
+- TanStack Query for state management
+- Tailwind CSS with custom Linear/Vercel theme
+- Lucide React icons
+- WebSocket for real-time updates
+
+**Backend:**
+- Go with Gorilla WebSocket
+- RESTful API with JSON responses
+- Concurrent job processing with goroutines
+- Connection pooling for PostgreSQL and ClickHouse
 
 ## Architecture
 
@@ -332,6 +481,18 @@ tables:
 ```
 
 ## Usage
+
+### Easiest Way: Web UI
+
+```bash
+# Start web server
+./chug web
+
+# Open http://localhost:8080
+# - Configure tables via UI
+# - Monitor real-time progress
+# - Manage CDC settings per table
+```
 
 ### Easy Way: YAML Config
 
@@ -591,6 +752,14 @@ CHUG is designed as an **append-only CDC pipeline** optimized for analytics work
 ```
 chug/
 ├── cmd/            # CLI commands
+├── api/            # Web API server and WebSocket
+├── web/            # React frontend (Vite + TypeScript)
+│   ├── src/
+│   │   ├── components/  # UI components
+│   │   ├── hooks/       # React hooks
+│   │   ├── api/         # API clients
+│   │   └── types/       # TypeScript types
+│   └── dist/       # Built static files
 ├── internal/
 │   ├── config/    # Configuration
 │   ├── db/        # Connection pools
@@ -604,17 +773,33 @@ chug/
 ### Build & Test
 
 ```bash
+# Build backend
 go build -o chug
 go test ./...
+
+# Build frontend (optional, for web UI)
+cd web
+npm install
+npm run build
+cd ..
 ```
 
 ### Local Development
 
+**Backend:**
 ```bash
 docker-compose up -d
-go run main.go ingest --pg-url "..." --ch-url "..." --table "test"
+go run main.go web                # Start web server
+go run main.go ingest --table "test"   # Or run CLI
 docker-compose logs -f
 docker-compose down -v
+```
+
+**Frontend (development mode):**
+```bash
+cd web
+npm run dev   # Hot reload at http://localhost:5173
+# Backend must be running at http://localhost:8080
 ```
 
 ## Contributing
@@ -632,4 +817,6 @@ MIT License. See [LICENSE](LICENSE).
 
 ---
 
-Built with [pgx](https://github.com/jackc/pgx), [ClickHouse Go](https://github.com/ClickHouse/clickhouse-go), [Cobra](https://github.com/spf13/cobra), [Zap](https://github.com/uber-go/zap).
+**Backend:** [pgx](https://github.com/jackc/pgx) • [ClickHouse Go](https://github.com/ClickHouse/clickhouse-go) • [Cobra](https://github.com/spf13/cobra) • [Zap](https://github.com/uber-go/zap) • [Gorilla WebSocket](https://github.com/gorilla/websocket)
+
+**Frontend:** [React](https://react.dev) • [TypeScript](https://www.typescriptlang.org) • [Vite](https://vitejs.dev) • [TanStack Query](https://tanstack.com/query) • [Tailwind CSS](https://tailwindcss.com) • [Lucide Icons](https://lucide.dev)
