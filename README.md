@@ -123,40 +123,42 @@ Comprehensive performance testing with percentile metrics (p50, p95, p99) for re
 
 ### Local Performance (Docker)
 
-| Operation | p50 Latency | Throughput | Batch Size |
-|-----------|-------------|------------|------------|
-| Extract 1K rows | 1.41ms | 675 ops/sec | - |
-| Extract 10K rows | 8.47ms | 117 ops/sec | - |
-| Extract 100K rows | 79.3ms | 12.6 ops/sec | - |
-| Insert 10K rows | 11.0ms | **91 ops/sec** | 1000 |
-| Insert 10K rows | 15.4ms | 62 ops/sec | 500 |
-| Insert 50K rows | 37.0ms | 27 ops/sec | 2000 |
-| CDC (1K changes) | 1.15ms | 871 ops/sec | - |
-| CDC (10K changes) | 8.08ms | 124 ops/sec | - |
-| **Multi-table (3×10K)** | **67.2ms** | **14.8 ops/sec** | 500 |
+| Operation | p50 | p95 | p99 | Throughput | Batch |
+|-----------|-----|-----|-----|------------|-------|
+| Extract 1K rows | 1.41ms | 3.01ms | 3.01ms | 675 ops/sec | - |
+| Extract 10K rows | 8.47ms | 10.4ms | 10.4ms | 117 ops/sec | - |
+| Extract 100K rows | 79.3ms | 85.2ms | 85.2ms | 12.6 ops/sec | - |
+| Insert 10K rows | 11.0ms | 12.3ms | 12.3ms | **91 ops/sec** | 1000 |
+| Insert 10K rows | 15.4ms | 33.6ms | 33.6ms | 62 ops/sec | 500 |
+| Insert 50K rows | 37.0ms | 39.7ms | 39.7ms | 27 ops/sec | 2000 |
+| CDC (1K changes) | 1.15ms | 1.98ms | 1.98ms | 871 ops/sec | - |
+| CDC (10K changes) | 8.08ms | 9.70ms | 9.70ms | 124 ops/sec | - |
+| **Multi-table (3×10K)** | **67.2ms** | **78.5ms** | **78.5ms** | **14.8 ops/sec** | 500 |
 
 ### Remote Performance (Cloud - Asia Pacific)
 
 **Infrastructure:** Neon PostgreSQL (Singapore) → ClickHouse Cloud (Mumbai)
 
-| Operation | p50 Latency | Throughput | vs Local |
-|-----------|-------------|------------|----------|
-| Extract 1K rows | 151ms | 6.6 ops/sec | **107x slower** |
-| Extract 10K rows | 471ms | 2.2 ops/sec | **55x slower** |
-| Extract 100K rows | 3.15s | 0.33 ops/sec | **39x slower** |
-| Insert 10K rows (batch 500) | 484ms | 2.0 ops/sec | **31x slower** |
-| Insert 10K rows (batch 1000) | 275ms | 3.4 ops/sec | **25x slower** |
-| Insert 50K rows (batch 2000) | 686ms | 1.4 ops/sec | **19x slower** |
-| CDC (1K changes) | 141ms | 7.1 ops/sec | **122x slower** |
-| CDC (10K changes) | 455ms | 2.2 ops/sec | **56x slower** |
-| **Multi-table (3×10K)** | **1.07s** | **0.85 ops/sec** | **17x slower** |
+| Operation | p50 | p95 | p99 | Throughput | vs Local |
+|-----------|-----|-----|-----|------------|----------|
+| Extract 1K rows | 151ms | 171ms | 171ms | 6.6 ops/sec | **107x slower** |
+| Extract 10K rows | 471ms | 523ms | 523ms | 2.2 ops/sec | **55x slower** |
+| Extract 100K rows | 3.15s | 3.32s | 3.32s | 0.33 ops/sec | **39x slower** |
+| Insert 10K (batch 500) | 484ms | 703ms | 703ms | 2.0 ops/sec | **31x slower** |
+| Insert 10K (batch 1000) | 275ms | 500ms | 500ms | 3.4 ops/sec | **25x slower** |
+| Insert 50K (batch 2000) | 686ms | 923ms | 923ms | 1.4 ops/sec | **19x slower** |
+| CDC (1K changes) | 141ms | 143ms | 143ms | 7.1 ops/sec | **122x slower** |
+| CDC (10K changes) | 455ms | 510ms | 510ms | 2.2 ops/sec | **56x slower** |
+| **Multi-table (3×10K)** | **1.07s** | **2.77s** | **2.77s** | **0.85 ops/sec** | **17x slower** |
 
 **Key Insights:**
+- **Tail latencies (p95/p99)** show consistent performance - most operations have tight distributions
 - Network latency dominates remote performance (17-122x slower depending on operation size)
 - Smaller operations suffer most from round-trip overhead (1K: 107-122x vs 100K: 39x)
 - Larger batches amortize network costs better (batch 1000 is 25% faster than batch 500)
 - Multi-table parallel execution helps mitigate cross-region latency (only 17x slower)
 - CDC performance scales with data size (1K: 122x slower, 10K: 56x slower)
+- Remote p95 can be **2.6x worse** than p50 (multi-table: 1.07s → 2.77s) due to network variance
 
 ### Running Benchmarks
 
