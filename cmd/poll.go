@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pixperk/chug/internal/config"
-	"github.com/pixperk/chug/internal/db"
 	"github.com/pixperk/chug/internal/etl"
 	"github.com/pixperk/chug/internal/logx"
 	"github.com/pixperk/chug/internal/poller"
@@ -14,7 +14,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func startPolling(ctx context.Context, cfg *config.Config, lastSeen string) error {
+func startPolling(ctx context.Context, cfg *config.Config, lastSeen string, pgConn *pgxpool.Pool) error {
 	log := logx.StyledLog
 	log.Highlight("Starting change data polling")
 
@@ -28,12 +28,6 @@ func startPolling(ctx context.Context, cfg *config.Config, lastSeen string) erro
 			"Delta Column: "+cfg.Polling.DeltaCol+"\n"+
 			"Interval: "+fmt.Sprintf("%d seconds", cfg.Polling.Interval)+"\n"+
 			"Starting From: "+startFrom)
-
-	// Connect to PostgreSQL pool for polling
-	pgConn, err := db.GetPostgresPool(cfg.PostgresURL)
-	if err != nil {
-		return fmt.Errorf("failed to connect to PostgreSQL for polling: %w", err)
-	}
 
 	// Ensure index exists on delta column for fast polling
 	log.Info("Checking/creating index on delta column...")

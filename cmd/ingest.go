@@ -436,7 +436,7 @@ func startTablePolling(ctx context.Context, cfg *config.Config, tableConfig conf
 	}
 
 	log.Highlight(fmt.Sprintf("Calling startPolling with interval: %d seconds", tableConfig.Polling.Interval))
-	if err := startPolling(ctx, pollingCfg, lastSeenValue); err != nil && err != context.Canceled {
+	if err := startPolling(ctx, pollingCfg, lastSeenValue, pgConn); err != nil && err != context.Canceled {
 		log.Error("Poller stopped with error", zap.Error(err))
 	} else if err == context.Canceled {
 		log.Info("Poller stopped (context canceled)")
