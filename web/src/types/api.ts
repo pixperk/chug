@@ -5,7 +5,11 @@ export interface ProgressUpdate {
   table: string;
   event: 'started' | 'extracting' | 'inserting' | 'completed' | 'error';
   message: string;
-  row_count?: number;
+  row_count?: number;      // Total rows processed for this table
+  current_rows?: number;   // Current batch/progress
+  total_rows?: number;     // Expected total (from limit)
+  percentage?: number;     // Completion percentage
+  phase?: string;          // extracting, inserting, completed
   duration?: string;
   timestamp: string;
 }
@@ -17,15 +21,27 @@ export interface TableResult {
   error?: string;
 }
 
+export interface TableProgress {
+  name: string;
+  status: 'pending' | 'extracting' | 'inserting' | 'completed' | 'failed';
+  current_rows: number;
+  total_rows?: number;
+  percentage: number;
+  error?: string;
+  latest_update?: ProgressUpdate;
+}
+
 export interface IngestionJob {
   id: string;
   status: 'pending' | 'running' | 'completed' | 'failed';
   tables: string[];
+  table_configs?: TableConfigRequest[]; // Table configurations for UI display
   results: TableResult[];
   progress: ProgressUpdate[];
   start_time: string;
   end_time?: string;
   error?: string;
+  table_progress?: Map<string, TableProgress>; // Client-side only for tracking
 }
 
 export interface PollingConfig {

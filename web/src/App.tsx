@@ -7,11 +7,13 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/ui/Tabs'
 import { IngestionForm } from './components/IngestionForm'
 import { JobList } from './components/JobList'
 import { useJobs } from './hooks/useJobs'
+import { useWebSocket } from './hooks/useWebSocket'
 
 const queryClient = new QueryClient()
 
 function StatsGrid() {
   const { data } = useJobs()
+  useWebSocket() // Connect to WebSocket for real-time updates
 
   const stats = {
     total: (data?.jobs || []).length,

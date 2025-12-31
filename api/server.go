@@ -26,25 +26,30 @@ type Server struct {
 }
 
 type IngestionJob struct {
-	ID          string              `json:"id"`
-	Status      string              `json:"status"` // pending, running, completed, failed
-	Tables      []string            `json:"tables"`
-	Results     []etl.TableResult   `json:"results"`
-	Progress    []ProgressUpdate    `json:"progress"`
-	StartTime   time.Time           `json:"start_time"`
-	EndTime     *time.Time          `json:"end_time,omitempty"`
-	Error       string              `json:"error,omitempty"`
-	mu          sync.RWMutex
+	ID           string              `json:"id"`
+	Status       string              `json:"status"` // pending, running, completed, failed
+	Tables       []string            `json:"tables"`
+	TableConfigs []TableConfigRequest `json:"table_configs,omitempty"` // Store table configurations for UI display
+	Results      []etl.TableResult   `json:"results"`
+	Progress     []ProgressUpdate    `json:"progress"`
+	StartTime    time.Time           `json:"start_time"`
+	EndTime      *time.Time          `json:"end_time,omitempty"`
+	Error        string              `json:"error,omitempty"`
+	mu           sync.RWMutex
 }
 
 type ProgressUpdate struct {
-	JobID     string    `json:"job_id"`
-	Table     string    `json:"table"`
-	Event     string    `json:"event"` // started, extracting, inserting, completed, error
-	Message   string    `json:"message"`
-	RowCount  int64     `json:"row_count,omitempty"`
-	Duration  string    `json:"duration,omitempty"`
-	Timestamp time.Time `json:"timestamp"`
+	JobID        string    `json:"job_id"`
+	Table        string    `json:"table"`
+	Event        string    `json:"event"` // started, extracting, inserting, completed, error
+	Message      string    `json:"message"`
+	RowCount     int64     `json:"row_count,omitempty"`      // Total rows processed for this table
+	CurrentRows  int64     `json:"current_rows,omitempty"`   // Current batch/progress
+	TotalRows    int64     `json:"total_rows,omitempty"`     // Expected total (from limit)
+	Percentage   float64   `json:"percentage,omitempty"`     // Completion percentage
+	Phase        string    `json:"phase,omitempty"`          // extracting, inserting, completed
+	Duration     string    `json:"duration,omitempty"`
+	Timestamp    time.Time `json:"timestamp"`
 }
 
 type TableConfigRequest struct {
@@ -293,11 +298,12 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	job := &IngestionJob{
-		ID:        jobID,
-		Status:    "pending",
-		Tables:    tableNames,
-		Progress:  make([]ProgressUpdate, 0),
-		StartTime: time.Now(),
+		ID:           jobID,
+		Status:       "pending",
+		Tables:       tableNames,
+		TableConfigs: req.Tables, // Store table configurations for UI display
+		Progress:     make([]ProgressUpdate, 0),
+		StartTime:    time.Now(),
 	}
 	s.jobs.Store(jobID, job)
 
