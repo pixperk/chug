@@ -5,7 +5,9 @@ export function useJobs() {
   return useQuery({
     queryKey: ['jobs'],
     queryFn: fetchJobs,
-    refetchInterval: 5000, // Refetch every 5 seconds
+    // WebSocket provides real-time updates, no need for polling
+    // Only refetch on window focus if data is stale
+    staleTime: 30000, // 30 seconds
   });
 }
 

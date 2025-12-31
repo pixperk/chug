@@ -10,9 +10,11 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pixperk/chug/internal/config"
 	"github.com/pixperk/chug/internal/db"
 	"github.com/pixperk/chug/internal/etl"
+	"github.com/pixperk/chug/internal/poller"
 	"go.uber.org/zap"
 )
 
@@ -549,6 +551,9 @@ func (s *Server) runIngestion(jobID string, req IngestRequest) {
 				Timestamp: time.Now(),
 			})
 		},
+		StartPolling: func(ctx context.Context, tableConfig config.ResolvedTableConfig) {
+			s.startTablePolling(ctx, cfg, tableConfig, pgConn, jobID)
+		},
 	}
 
 	// Run ingestion
@@ -576,12 +581,25 @@ func (s *Server) runIngestion(jobID string, req IngestRequest) {
 	}
 	job.mu.Unlock()
 
-	s.sendUpdate(ProgressUpdate{
-		JobID:     jobID,
-		Event:     "job_completed",
-		Message:   fmt.Sprintf("Job completed with status: %s", job.Status),
-		Timestamp: time.Now(),
-	})
+	// Only send job_completed update if CDC is running (to keep tracking)
+	// Otherwise job is truly done and doesn't need WebSocket updates
+	hasCDC := false
+	for _, tc := range cfg.Tables {
+		resolved := cfg.ResolveTableConfig(tc)
+		if resolved.Polling.Enabled {
+			hasCDC = true
+			break
+		}
+	}
+
+	if hasCDC {
+		s.sendUpdate(ProgressUpdate{
+			JobID:     jobID,
+			Event:     "job_completed",
+			Message:   fmt.Sprintf("Job completed with status: %s (CDC active)", job.Status),
+			Timestamp: time.Now(),
+		})
+	}
 }
 
 func (s *Server) handleJobError(job *IngestionJob, errMsg string) {
@@ -605,4 +623,95 @@ func (s *Server) getOrDefault(value, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func (s *Server) startTablePolling(ctx context.Context, cfg *config.Config, tableConfig config.ResolvedTableConfig, pgConn *pgxpool.Pool, jobID string) {
+	if !tableConfig.Polling.Enabled {
+		s.logger.Warn("Polling not enabled for table", zap.String("table", tableConfig.Name))
+		return
+	}
+
+	s.logger.Info("Starting CDC polling",
+		zap.String("table", tableConfig.Name),
+		zap.String("delta_column", tableConfig.Polling.DeltaCol),
+		zap.Int("interval_seconds", tableConfig.Polling.Interval))
+
+	// Ensure index on delta column
+	if err := etl.EnsureDeltaColumnIndex(ctx, pgConn, tableConfig.Name, tableConfig.Polling.DeltaCol); err != nil {
+		s.logger.Warn("Could not create index on delta column",
+			zap.String("table", tableConfig.Name),
+			zap.Error(err))
+	}
+
+	// Get MAX value of delta column to start from
+	var lastSeenValue string
+	query := fmt.Sprintf("SELECT MAX(%s) FROM %s", tableConfig.Polling.DeltaCol, tableConfig.Name)
+	var maxValue any
+	if err := pgConn.QueryRow(ctx, query).Scan(&maxValue); err != nil {
+		s.logger.Warn("Could not determine max delta value, starting from epoch",
+			zap.String("table", tableConfig.Name),
+			zap.Error(err))
+		lastSeenValue = "1970-01-01 00:00:00"
+	} else if maxValue != nil {
+		switch v := maxValue.(type) {
+		case time.Time:
+			lastSeenValue = v.Format("2006-01-02 15:04:05.999999")
+		case string:
+			lastSeenValue = v
+		case int, int64, int32, int16, int8:
+			lastSeenValue = fmt.Sprintf("%d", v)
+		case float64, float32:
+			lastSeenValue = fmt.Sprintf("%f", v)
+		default:
+			if t, ok := v.(time.Time); ok {
+				lastSeenValue = t.Format("2006-01-02 15:04:05.999999")
+			} else {
+				lastSeenValue = fmt.Sprintf("%v", v)
+			}
+		}
+	} else {
+		lastSeenValue = "1970-01-01 00:00:00"
+	}
+
+	s.logger.Info("Starting poller",
+		zap.String("table", tableConfig.Name),
+		zap.String("last_seen", lastSeenValue))
+
+	// Create poller config
+	processNewData := func(data *etl.TableData) error {
+		if len(data.Rows) > 0 {
+			s.logger.Info("CDC: Processing new data batch",
+				zap.String("table", tableConfig.Name),
+				zap.Int("rows", len(data.Rows)))
+
+			s.sendUpdate(ProgressUpdate{
+				JobID:     jobID,
+				Table:     tableConfig.Name,
+				Event:     "cdc_update",
+				Message:   fmt.Sprintf("CDC: Syncing %d new rows", len(data.Rows)),
+				RowCount:  int64(len(data.Rows)),
+				Timestamp: time.Now(),
+			})
+		}
+		return etl.InsertRows(cfg.ClickHouseURL, tableConfig.Name, etl.GetColumnNames(data.Columns), data.Rows, tableConfig.BatchSize)
+	}
+
+	limit := tableConfig.Limit
+	pollConfig := poller.PollConfig{
+		Table:     tableConfig.Name,
+		DeltaCol:  tableConfig.Polling.DeltaCol,
+		Interval:  time.Duration(tableConfig.Polling.Interval) * time.Second,
+		Limit:     &limit,
+		StartFrom: lastSeenValue,
+		OnData:    processNewData,
+	}
+
+	p := poller.NewPoller(pgConn, pollConfig)
+
+	// Start poller in background
+	if err := p.Start(ctx); err != nil && err != context.Canceled {
+		s.logger.Error("CDC poller stopped with error",
+			zap.String("table", tableConfig.Name),
+			zap.Error(err))
+	}
 }

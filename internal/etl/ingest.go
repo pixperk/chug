@@ -13,11 +13,11 @@ import (
 
 // TableResult represents the result of ingesting a single table
 type TableResult struct {
-	TableName string
-	Success   bool
-	Error     error
-	RowCount  int64
-	Duration  time.Duration
+	TableName string        `json:"name"`
+	Success   bool          `json:"success"`
+	Error     error         `json:"error"`
+	RowCount  int64         `json:"rows"`
+	Duration  time.Duration `json:"duration"`
 }
 
 // IngestOptions contains optional callbacks for logging/monitoring
@@ -102,7 +102,7 @@ func IngestSingleTable(
 	}
 
 	// Progress reporting ticker
-	progressTicker := time.NewTicker(500 * time.Millisecond)
+	progressTicker := time.NewTicker(2 * time.Second)
 	defer progressTicker.Stop()
 
 	// Goroutine for progress updates

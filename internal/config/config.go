@@ -79,7 +79,7 @@ func (c *Config) ResolveTableConfig(tc TableConfig) ResolvedTableConfig {
 	} else if c.Limit != nil {
 		resolved.Limit = *c.Limit
 	} else {
-		resolved.Limit = 1000
+		resolved.Limit = 0 // 0 = unlimited
 	}
 
 	if tc.BatchSize != nil {
