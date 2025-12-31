@@ -265,13 +265,11 @@ func ingestSingleTable(ctx context.Context, cfg *config.Config, tableConfig conf
 	}
 
 	log.Info("Inserting data into ClickHouse (streaming)...")
-	var lastRow []any
 	var rowCount atomic.Int64
 	rowChan := make(chan []any, 100)
 
 	go func() {
 		for row := range stream.RowChan {
-			lastRow = row
 			rowChan <- row
 			rowCount.Add(1)
 		}
@@ -298,8 +296,8 @@ func ingestSingleTable(ctx context.Context, cfg *config.Config, tableConfig conf
 
 	log.Success("Ingestion completed", zap.Int64("rows", result.RowCount), zap.Duration("duration", result.Duration))
 
-	if tableConfig.Polling.Enabled && lastRow != nil {
-		go startTablePolling(ctx, cfg, tableConfig, pgConn, lastRow, stream.Columns)
+	if tableConfig.Polling.Enabled {
+		go startTablePolling(ctx, cfg, tableConfig, pgConn)
 	}
 
 	return result
@@ -371,7 +369,7 @@ func printResultsSummary(results []TableResult) {
 	}
 }
 
-func startTablePolling(ctx context.Context, cfg *config.Config, tableConfig config.ResolvedTableConfig, pgConn *pgxpool.Pool, lastRow []any, columns []etl.Column) {
+func startTablePolling(ctx context.Context, cfg *config.Config, tableConfig config.ResolvedTableConfig, pgConn *pgxpool.Pool) {
 	log := logx.StyledLog.With(zap.String("table", tableConfig.Name))
 
 	if !tableConfig.Polling.Enabled {
@@ -385,18 +383,17 @@ func startTablePolling(ctx context.Context, cfg *config.Config, tableConfig conf
 		log.Success("Index ready on delta column", zap.String("column", tableConfig.Polling.DeltaCol))
 	}
 
+	// Query for the MAX value of the delta column to ensure we start from the correct position
+	// This avoids race conditions with streaming ingestion
 	var lastSeenValue string
-	deltaColIndex := -1
-	for i, col := range columns {
-		if col.Name == tableConfig.Polling.DeltaCol {
-			deltaColIndex = i
-			break
-		}
-	}
-
-	if deltaColIndex != -1 && lastRow != nil {
-		// Format the last seen value properly for PostgreSQL
-		switch v := lastRow[deltaColIndex].(type) {
+	query := fmt.Sprintf("SELECT MAX(%s) FROM %s", tableConfig.Polling.DeltaCol, tableConfig.Name)
+	var maxValue any
+	if err := pgConn.QueryRow(ctx, query).Scan(&maxValue); err != nil {
+		log.Warn("Could not determine max delta value, starting from epoch", zap.Error(err))
+		lastSeenValue = "1970-01-01 00:00:00"
+	} else if maxValue != nil {
+		// Format the max value properly for PostgreSQL
+		switch v := maxValue.(type) {
 		case time.Time:
 			lastSeenValue = v.Format("2006-01-02 15:04:05.999999")
 		case string:
@@ -412,6 +409,9 @@ func startTablePolling(ctx context.Context, cfg *config.Config, tableConfig conf
 				lastSeenValue = fmt.Sprintf("%v", v)
 			}
 		}
+	} else {
+		// No data in table yet
+		lastSeenValue = "1970-01-01 00:00:00"
 	}
 
 	pollingCfg := &config.Config{
