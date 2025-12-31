@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/pixperk/chug/internal/config"
 	"github.com/pixperk/chug/internal/db"
@@ -17,6 +18,7 @@ var (
 	ingestPgURL      string
 	ingestChURL      string
 	ingestTable      string
+	ingestTables     string
 	ingestLimit      int
 	ingestBatch      int
 	ingestConfigPath string
@@ -199,6 +201,22 @@ func loadConfig() *config.Config {
 		}
 	}
 
+	// Parse --tables flag (comma-separated list)
+	if ingestTables != "" {
+		tableNames := strings.Split(ingestTables, ",")
+		for _, name := range tableNames {
+			trimmed := strings.TrimSpace(name)
+			if trimmed != "" {
+				cfg.Tables = append(cfg.Tables, config.TableConfig{Name: trimmed})
+			}
+		}
+	}
+
+	// Backward compat: single --table flag
+	if ingestTable != "" && len(cfg.Tables) == 0 {
+		cfg.Tables = append(cfg.Tables, config.TableConfig{Name: ingestTable})
+	}
+
 	return cfg
 }
 
@@ -240,6 +258,7 @@ func init() {
 	ingestCmd.Flags().StringVar(&ingestPgURL, "pg-url", "", "PostgreSQL connection URL")
 	ingestCmd.Flags().StringVar(&ingestChURL, "ch-url", "", "ClickHouse connection URL")
 	ingestCmd.Flags().StringVar(&ingestTable, "table", "", "Table name to ingest")
+	ingestCmd.Flags().StringVar(&ingestTables, "tables", "", "Comma-separated list of tables (e.g., users,orders,products)")
 	ingestCmd.Flags().IntVar(&ingestLimit, "limit", 1000, "Limit rows to fetch from PG")
 	ingestCmd.Flags().IntVar(&ingestBatch, "batch-size", 500, "Rows per ClickHouse insert")
 	// Polling flags
