@@ -41,30 +41,34 @@ var serveCmd = &cobra.Command{
 			cfg.ClickHouseURL = serveChURL
 		}
 
-		// Validate config
-		if cfg.PostgresURL == "" || cfg.ClickHouseURL == "" {
-			log.Error("Missing required configuration",
-				zap.String("pg_url", cfg.PostgresURL),
-				zap.String("ch_url", cfg.ClickHouseURL))
-			log.Info("Use --pg-url and --ch-url flags or provide a config file")
-			return
+		// Display configuration
+		var configInfo string
+		if cfg.PostgresURL != "" && cfg.ClickHouseURL != "" {
+			configInfo = "PostgreSQL: " + cfg.PostgresURL + "\n" +
+				"ClickHouse: " + cfg.ClickHouseURL + "\n" +
+				"Server Port: " + servePort
+		} else {
+			configInfo = "Server Port: " + servePort + "\n" +
+				"Note: Database URLs can be provided per-request via the web UI"
 		}
 
-		ui.PrintBox("Configuration",
-			"PostgreSQL: Connected\n"+
-				"ClickHouse: Connected\n"+
-				"Server Port: "+servePort)
+		ui.PrintBox("Configuration", configInfo)
 
 		// Create and start server
 		server := api.NewServer(cfg, log.GetZapLogger())
 
 		log.Highlight("Starting API server on http://localhost:" + servePort)
-		log.Info("Endpoints available:")
+		log.Info("")
+		log.Success("Web UI: http://localhost:" + servePort)
+		log.Info("")
+		log.Info("API Endpoints:")
 		log.Info("  GET  /health                - Health check")
+		log.Info("  GET  /api/v1/tables         - List available PostgreSQL tables")
 		log.Info("  POST /api/v1/ingest         - Start ingestion job")
 		log.Info("  GET  /api/v1/jobs           - List all jobs")
 		log.Info("  GET  /api/v1/jobs/{id}      - Get job status")
 		log.Info("  WS   /ws                    - WebSocket for real-time updates")
+		log.Info("")
 		log.Highlight("Press Ctrl+C to stop")
 
 		if err := server.Start(":" + servePort); err != nil {

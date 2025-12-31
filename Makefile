@@ -169,3 +169,13 @@ clean-db:
 	else \
 		echo "Cancelled."; \
 	fi'
+
+# Web UI targets
+.PHONY: build-web dev-web
+
+build-web:
+	cd web && npm install && npm run build
+
+dev-web:
+	cd web && npm run dev
+

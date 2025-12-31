@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -83,7 +84,9 @@ func (s *Server) Start(addr string) error {
 	go s.broadcastUpdates()
 
 	// Setup routes
+	http.HandleFunc("/", s.handleWebUI)
 	http.HandleFunc("/health", s.handleHealth)
+	http.HandleFunc("/api/v1/tables", s.handleListTables)
 	http.HandleFunc("/api/v1/ingest", s.handleIngest)
 	http.HandleFunc("/api/v1/jobs", s.handleListJobs)
 	http.HandleFunc("/api/v1/jobs/", s.handleJobStatus)
@@ -91,6 +94,22 @@ func (s *Server) Start(addr string) error {
 
 	s.logger.Info("Starting API server", zap.String("addr", addr))
 	return http.ListenAndServe(addr, nil)
+}
+
+func (s *Server) handleWebUI(w http.ResponseWriter, r *http.Request) {
+	distDir := "web/dist"
+
+	// For SPA routing - serve index.html for non-existent files
+	if r.URL.Path != "/" {
+		filePath := distDir + r.URL.Path
+		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			http.ServeFile(w, r, distDir+"/index.html")
+			return
+		}
+	}
+
+	fs := http.FileServer(http.Dir(distDir))
+	fs.ServeHTTP(w, r)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -107,6 +126,62 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+func (s *Server) handleListTables(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get pg_url from query params or use server default
+	pgURL := r.URL.Query().Get("pg_url")
+	if pgURL == "" {
+		pgURL = s.config.PostgresURL
+	}
+
+	if pgURL == "" {
+		http.Error(w, "PostgreSQL URL not configured", http.StatusBadRequest)
+		return
+	}
+
+	// Connect to PostgreSQL
+	pgConn, err := db.GetPostgresPool(pgURL)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to connect to PostgreSQL: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Query for all tables in public schema
+	ctx := context.Background()
+	query := `
+		SELECT table_name
+		FROM information_schema.tables
+		WHERE table_schema = 'public'
+		AND table_type = 'BASE TABLE'
+		ORDER BY table_name
+	`
+
+	rows, err := pgConn.Query(ctx, query)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to query tables: %v", err), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var tables []string
+	for rows.Next() {
+		var tableName string
+		if err := rows.Scan(&tableName); err != nil {
+			continue
+		}
+		tables = append(tables, tableName)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"tables": tables,
+	})
 }
 
 func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {

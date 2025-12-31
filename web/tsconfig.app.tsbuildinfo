@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/api/client.ts","./src/api/connection.ts","./src/api/jobs.ts","./src/api/tables.ts","./src/api/websocket.ts","./src/components/ui/Badge.tsx","./src/components/ui/Button.tsx","./src/components/ui/Card.tsx","./src/components/ui/Input.tsx","./src/components/ui/Select.tsx","./src/types/api.ts"],"version":"5.6.3"}

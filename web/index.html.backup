@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chug - PostgreSQL to ClickHouse ETL</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --background: #000000;
+            --foreground: #ffffff;
+            --gray-50: #fafafa;
+            --gray-100: #f4f4f5;
+            --gray-200: #e4e4e7;
+            --gray-300: #d4d4d8;
+            --gray-400: #a1a1aa;
+            --gray-500: #71717a;
+            --gray-600: #52525b;
+            --gray-700: #3f3f46;
+            --gray-800: #27272a;
+            --gray-900: #18181b;
+            --border: #333333;
+            --accent: #0070f3;
+            --accent-hover: #0761d1;
+            --success: #00d084;
+            --error: #ff0080;
+            --warning: #f5a623;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+            background: var(--background);
+            color: var(--foreground);
+            line-height: 1.6;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            margin-bottom: 48px;
+            padding-bottom: 24px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        h1 {
+            font-size: 40px;
+            font-weight: 700;
+            letter-spacing: -0.05em;
+            margin-bottom: 8px;
+            background: linear-gradient(to right, var(--foreground), var(--gray-400));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            color: var(--gray-400);
+            font-size: 16px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: var(--gray-900);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            transition: all 0.2s ease;
+        }
+
+        .card:hover {
+            border-color: var(--gray-700);
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: var(--gray-300);
+        }
+
+        input, textarea {
+            width: 100%;
+            padding: 10px 12px;
+            background: var(--background);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--foreground);
+            font-size: 14px;
+            font-family: inherit;
+            transition: all 0.2s ease;
+        }
+
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(0, 112, 243, 0.1);
+        }
+
+        input::placeholder, textarea::placeholder {
+            color: var(--gray-500);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 60px;
+        }
+
+        .input-hint {
+            font-size: 12px;
+            color: var(--gray-500);
+            margin-top: 4px;
+        }
+
+        button {
+            padding: 10px 20px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
+        }
+
+        button:hover {
+            background: var(--accent-hover);
+            transform: translateY(-1px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            background: var(--gray-700);
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .status-pending {
+            background: var(--gray-800);
+            color: var(--gray-400);
+        }
+
+        .status-running {
+            background: rgba(0, 112, 243, 0.1);
+            color: var(--accent);
+        }
+
+        .status-completed {
+            background: rgba(0, 208, 132, 0.1);
+            color: var(--success);
+        }
+
+        .status-failed {
+            background: rgba(255, 0, 128, 0.1);
+            color: var(--error);
+        }
+
+        .job-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .job-item {
+            background: var(--background);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            transition: all 0.2s ease;
+        }
+
+        .job-item:hover {
+            border-color: var(--gray-600);
+        }
+
+        .job-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .job-id {
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            color: var(--gray-400);
+        }
+
+        .job-tables {
+            font-size: 14px;
+            color: var(--gray-300);
+            margin-bottom: 8px;
+        }
+
+        .progress-log {
+            background: var(--background);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            margin-top: 12px;
+        }
+
+        .progress-item {
+            padding: 4px 0;
+            display: flex;
+            gap: 8px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .progress-time {
+            color: var(--gray-500);
+        }
+
+        .progress-event {
+            font-weight: 600;
+        }
+
+        .event-started { color: var(--accent); }
+        .event-extracting { color: var(--warning); }
+        .event-inserting { color: var(--warning); }
+        .event-completed { color: var(--success); }
+        .event-error { color: var(--error); }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--gray-500);
+            margin-top: 24px;
+            padding-top: 24px;
+            border-top: 1px solid var(--border);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .status-connected {
+            background: var(--success);
+        }
+
+        .status-disconnected {
+            background: var(--error);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--gray-500);
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.3;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .stat-card {
+            background: var(--background);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--gray-500);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Chug</h1>
+            <p class="subtitle">PostgreSQL to ClickHouse ETL Pipeline</p>
+        </header>
+
+        <div class="grid">
+            <div class="card">
+                <h2 class="card-title">
+                    <span>📊</span>
+                    New Ingestion Job
+                </h2>
+                <form id="ingestForm">
+                    <div class="form-group">
+                        <label for="pgUrl">PostgreSQL URL</label>
+                        <input
+                            type="text"
+                            id="pgUrl"
+                            placeholder="postgresql://user:pass@localhost:5432/db"
+                        >
+                        <div class="input-hint">Leave empty to use server default</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="chUrl">ClickHouse URL</label>
+                        <input
+                            type="text"
+                            id="chUrl"
+                            placeholder="clickhouse://localhost:9000"
+                        >
+                        <div class="input-hint">Leave empty to use server default</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="tables">Tables</label>
+                        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                            <button type="button" id="loadTablesBtn" style="flex: 0;">
+                                Load Tables
+                            </button>
+                            <span id="tableLoadStatus" style="font-size: 12px; color: var(--gray-500); align-self: center;"></span>
+                        </div>
+                        <select
+                            id="tables"
+                            multiple
+                            size="6"
+                            style="padding: 8px;"
+                        >
+                            <option value="" disabled>Click "Load Tables" to fetch available tables</option>
+                        </select>
+                        <div class="input-hint">Hold Ctrl/Cmd to select multiple tables</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="limit">Limit</label>
+                        <input
+                            type="number"
+                            id="limit"
+                            placeholder="1000"
+                        >
+                        <div class="input-hint">Max rows per table (leave empty for all)</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="batchSize">Batch Size</label>
+                        <input
+                            type="number"
+                            id="batchSize"
+                            placeholder="500"
+                        >
+                        <div class="input-hint">Rows per ClickHouse insert batch</div>
+                    </div>
+
+                    <button type="submit">Start Ingestion</button>
+                </form>
+
+                <div class="connection-status">
+                    <div class="status-dot" id="statusDot"></div>
+                    <span id="connectionStatus">Connecting to WebSocket...</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2 class="card-title">
+                    <span>📈</span>
+                    Statistics
+                </h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">Total Jobs</div>
+                        <div class="stat-value" id="totalJobs">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Running</div>
+                        <div class="stat-value" id="runningJobs" style="color: var(--accent)">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Completed</div>
+                        <div class="stat-value" id="completedJobs" style="color: var(--success)">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Failed</div>
+                        <div class="stat-value" id="failedJobs" style="color: var(--error)">0</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 class="card-title">
+                <span>⚡</span>
+                Active Jobs
+            </h2>
+            <div class="job-list" id="jobList">
+                <div class="empty-state">
+                    <div class="empty-state-icon">📦</div>
+                    <p>No jobs yet. Start an ingestion to see real-time progress.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8080';
+        const WS_URL = 'ws://localhost:8080/ws';
+
+        let ws = null;
+        let jobs = new Map();
+
+        // Initialize WebSocket
+        function connectWebSocket() {
+            ws = new WebSocket(WS_URL);
+
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                updateConnectionStatus(true);
+            };
+
+            ws.onmessage = (event) => {
+                const update = JSON.parse(event.data);
+                handleProgressUpdate(update);
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket disconnected');
+                updateConnectionStatus(false);
+                setTimeout(connectWebSocket, 3000);
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                updateConnectionStatus(false);
+            };
+        }
+
+        function updateConnectionStatus(connected) {
+            const statusDot = document.getElementById('statusDot');
+            const statusText = document.getElementById('connectionStatus');
+
+            if (connected) {
+                statusDot.className = 'status-dot status-connected';
+                statusText.textContent = 'Connected to server';
+            } else {
+                statusDot.className = 'status-dot status-disconnected';
+                statusText.textContent = 'Disconnected - Reconnecting...';
+            }
+        }
+
+        function handleProgressUpdate(update) {
+            const jobId = update.job_id;
+
+            if (!jobs.has(jobId)) {
+                fetchJobDetails(jobId);
+            }
+
+            const job = jobs.get(jobId);
+            if (job) {
+                if (!job.progress) job.progress = [];
+                job.progress.push(update);
+                updateJobDisplay(jobId);
+            }
+        }
+
+        async function fetchJobDetails(jobId) {
+            try {
+                const response = await fetch(`${API_URL}/api/v1/jobs/${jobId}`);
+                const data = await response.json();
+                jobs.set(jobId, data.job);
+                updateJobDisplay(jobId);
+                updateStats();
+            } catch (error) {
+                console.error('Error fetching job details:', error);
+            }
+        }
+
+        async function fetchAllJobs() {
+            try {
+                const response = await fetch(`${API_URL}/api/v1/jobs`);
+                const data = await response.json();
+                data.jobs.forEach(job => {
+                    jobs.set(job.id, job);
+                });
+                renderJobs();
+                updateStats();
+            } catch (error) {
+                console.error('Error fetching jobs:', error);
+            }
+        }
+
+        function updateJobDisplay(jobId) {
+            const job = jobs.get(jobId);
+            if (!job) return;
+
+            let jobElement = document.getElementById(`job-${jobId}`);
+
+            if (!jobElement) {
+                const jobList = document.getElementById('jobList');
+                const emptyState = jobList.querySelector('.empty-state');
+                if (emptyState) emptyState.remove();
+
+                jobElement = document.createElement('div');
+                jobElement.id = `job-${jobId}`;
+                jobElement.className = 'job-item';
+                jobList.insertBefore(jobElement, jobList.firstChild);
+            }
+
+            const statusClass = `status-${job.status}`;
+            const progressHtml = (job.progress || []).map(p => {
+                const time = new Date(p.timestamp).toLocaleTimeString();
+                const eventClass = `event-${p.event}`;
+                return `
+                    <div class="progress-item">
+                        <span class="progress-time">${time}</span>
+                        <span class="progress-event ${eventClass}">${p.event}</span>
+                        <span>${p.table || ''} ${p.message}</span>
+                        ${p.row_count ? `<span>(${p.row_count} rows)</span>` : ''}
+                    </div>
+                `;
+            }).join('');
+
+            jobElement.innerHTML = `
+                <div class="job-header">
+                    <span class="job-id">${jobId}</span>
+                    <span class="status-badge ${statusClass}">${job.status}</span>
+                </div>
+                <div class="job-tables">
+                    Tables: ${job.tables.join(', ')}
+                </div>
+                ${job.progress && job.progress.length > 0 ? `
+                    <div class="progress-log">${progressHtml}</div>
+                ` : ''}
+            `;
+
+            updateStats();
+        }
+
+        function renderJobs() {
+            const jobList = document.getElementById('jobList');
+            jobList.innerHTML = '';
+
+            if (jobs.size === 0) {
+                jobList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📦</div>
+                        <p>No jobs yet. Start an ingestion to see real-time progress.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const sortedJobs = Array.from(jobs.values()).sort((a, b) =>
+                new Date(b.start_time) - new Date(a.start_time)
+            );
+
+            sortedJobs.forEach(job => {
+                updateJobDisplay(job.id);
+            });
+        }
+
+        function updateStats() {
+            const total = jobs.size;
+            const running = Array.from(jobs.values()).filter(j => j.status === 'running').length;
+            const completed = Array.from(jobs.values()).filter(j => j.status === 'completed').length;
+            const failed = Array.from(jobs.values()).filter(j => j.status === 'failed').length;
+
+            document.getElementById('totalJobs').textContent = total;
+            document.getElementById('runningJobs').textContent = running;
+            document.getElementById('completedJobs').textContent = completed;
+            document.getElementById('failedJobs').textContent = failed;
+        }
+
+        // Load tables from PostgreSQL
+        document.getElementById('loadTablesBtn').addEventListener('click', async () => {
+            const pgUrl = document.getElementById('pgUrl').value;
+            const statusEl = document.getElementById('tableLoadStatus');
+            const btn = document.getElementById('loadTablesBtn');
+
+            btn.disabled = true;
+            statusEl.textContent = 'Loading...';
+            statusEl.style.color = 'var(--gray-500)';
+
+            try {
+                const url = new URL(`${API_URL}/api/v1/tables`);
+                if (pgUrl) {
+                    url.searchParams.append('pg_url', pgUrl);
+                }
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                const select = document.getElementById('tables');
+                select.innerHTML = '';
+
+                if (data.tables && data.tables.length > 0) {
+                    data.tables.forEach(table => {
+                        const option = document.createElement('option');
+                        option.value = table;
+                        option.textContent = table;
+                        select.appendChild(option);
+                    });
+                    statusEl.textContent = `Loaded ${data.tables.length} tables`;
+                    statusEl.style.color = 'var(--success)';
+                } else {
+                    select.innerHTML = '<option disabled>No tables found</option>';
+                    statusEl.textContent = 'No tables found';
+                    statusEl.style.color = 'var(--warning)';
+                }
+            } catch (error) {
+                console.error('Error loading tables:', error);
+                statusEl.textContent = 'Failed to load tables';
+                statusEl.style.color = 'var(--error)';
+                alert('Failed to load tables. Check PostgreSQL URL.');
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        document.getElementById('ingestForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const pgUrl = document.getElementById('pgUrl').value;
+            const chUrl = document.getElementById('chUrl').value;
+            const tablesSelect = document.getElementById('tables');
+            const tables = Array.from(tablesSelect.selectedOptions).map(opt => opt.value);
+
+            if (tables.length === 0) {
+                alert('Please select at least one table');
+                return;
+            }
+
+            const limit = document.getElementById('limit').value;
+            const batchSize = document.getElementById('batchSize').value;
+
+            const payload = { tables };
+            if (pgUrl) payload.pg_url = pgUrl;
+            if (chUrl) payload.ch_url = chUrl;
+            if (limit) payload.limit = parseInt(limit);
+            if (batchSize) payload.batch_size = parseInt(batchSize);
+
+            try {
+                const response = await fetch(`${API_URL}/api/v1/ingest`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+                console.log('Job created:', data.job_id);
+
+                // Clear form selections
+                tablesSelect.selectedIndex = -1;
+
+                // Fetch job details immediately
+                setTimeout(() => fetchJobDetails(data.job_id), 500);
+            } catch (error) {
+                console.error('Error creating job:', error);
+                alert('Failed to create ingestion job');
+            }
+        });
+
+        // Initialize
+        connectWebSocket();
+        fetchAllJobs();
+        setInterval(fetchAllJobs, 5000);
+    </script>
+</body>
+</html>
