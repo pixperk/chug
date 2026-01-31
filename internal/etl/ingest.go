@@ -15,7 +15,7 @@ import (
 type TableResult struct {
 	TableName string        `json:"name"`
 	Success   bool          `json:"success"`
-	Error     error         `json:"error"`
+	Error     string        `json:"error,omitempty"`
 	RowCount  int64         `json:"rows"`
 	Duration  time.Duration `json:"duration"`
 }
@@ -52,9 +52,10 @@ func IngestSingleTable(
 	// Extract data from PostgreSQL
 	stream, err := ExtractTableDataStreaming(ctx, pgConn, tableConfig.Name, &tableConfig.Limit)
 	if err != nil {
-		result.Error = fmt.Errorf("extraction failed: %w", err)
+		errMsg := fmt.Sprintf("extraction failed: %v", err)
+		result.Error = errMsg
 		if opts != nil && opts.OnTableError != nil {
-			opts.OnTableError(tableConfig.Name, result.Error)
+			opts.OnTableError(tableConfig.Name, fmt.Errorf("%s", errMsg))
 		}
 		return result
 	}
@@ -72,17 +73,19 @@ func IngestSingleTable(
 	// Build DDL and create table in ClickHouse
 	ddl, err := BuildDDLQuery(tableConfig.Name, stream.Columns, tableConfig.Polling.Enabled, tableConfig.Polling.DeltaCol, pkCols)
 	if err != nil {
-		result.Error = fmt.Errorf("DDL generation failed: %w", err)
+		errMsg := fmt.Sprintf("DDL generation failed: %v", err)
+		result.Error = errMsg
 		if opts != nil && opts.OnTableError != nil {
-			opts.OnTableError(tableConfig.Name, result.Error)
+			opts.OnTableError(tableConfig.Name, fmt.Errorf("%s", errMsg))
 		}
 		return result
 	}
 
 	if err := CreateTable(chURL, ddl); err != nil {
-		result.Error = fmt.Errorf("table creation failed: %w", err)
+		errMsg := fmt.Sprintf("table creation failed: %v", err)
+		result.Error = errMsg
 		if opts != nil && opts.OnTableError != nil {
-			opts.OnTableError(tableConfig.Name, result.Error)
+			opts.OnTableError(tableConfig.Name, fmt.Errorf("%s", errMsg))
 		}
 		return result
 	}
@@ -131,9 +134,10 @@ func IngestSingleTable(
 	}()
 
 	if err := InsertRowsStreaming(ctx, chURL, tableConfig.Name, GetColumnNames(stream.Columns), rowChan, tableConfig.BatchSize); err != nil {
-		result.Error = fmt.Errorf("insertion failed: %w", err)
+		errMsg := fmt.Sprintf("insertion failed: %v", err)
+		result.Error = errMsg
 		if opts != nil && opts.OnTableError != nil {
-			opts.OnTableError(tableConfig.Name, result.Error)
+			opts.OnTableError(tableConfig.Name, fmt.Errorf("%s", errMsg))
 		}
 		return result
 	}
@@ -142,9 +146,10 @@ func IngestSingleTable(
 	select {
 	case err := <-stream.ErrChan:
 		if err != nil {
-			result.Error = fmt.Errorf("extraction error: %w", err)
+			errMsg := fmt.Sprintf("extraction error: %v", err)
+			result.Error = errMsg
 			if opts != nil && opts.OnTableError != nil {
-				opts.OnTableError(tableConfig.Name, result.Error)
+				opts.OnTableError(tableConfig.Name, fmt.Errorf("%s", errMsg))
 			}
 			return result
 		}

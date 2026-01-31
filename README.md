@@ -92,7 +92,7 @@ CHUG includes a modern web interface for managing ingestion jobs with real-time 
 ```bash
 # Build and run
 go build -o chug
-./chug web
+./chug serve
 
 # Access UI at http://localhost:8080
 ```

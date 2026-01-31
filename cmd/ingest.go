@@ -94,7 +94,7 @@ var ingestCmd = &cobra.Command{
 					select {}
 				}
 			} else {
-				log.Error("Ingestion failed", zap.Error(result.Error))
+				log.Error("Ingestion failed", zap.String("error", result.Error))
 				os.Exit(1)
 			}
 		} else {
@@ -314,7 +314,7 @@ func printResultsSummary(results []TableResult) {
 			failCount++
 			log.Error(
 				fmt.Sprintf("Table '%s' failed", r.TableName),
-				zap.Error(r.Error),
+				zap.String("error", r.Error),
 			)
 		}
 	}
